@@ -24,11 +24,19 @@ npm run dev
 
 Open `http://localhost:4173`.
 
+Build the static output locally with:
+
+```bash
+npm run build
+```
+
+This writes the deployable HTML, CSS, JavaScript, and favicon to `public/`.
+
 ## Deploy to Vercel
 
 1. Push this folder to a GitHub repository.
 2. In Vercel, choose **Add New → Project** and import that repository.
-3. Select **Other** (static files) if asked for a framework. Leave Build Command and Install Command blank; set the output directory to `.` if prompted.
+3. Select **Other** (static files) if asked for a framework. The included `vercel.json` runs `npm run build` and serves `public/`.
 4. Deploy. The site is a static front-end and needs no environment variables.
 
 `vercel.json` is included. This preview can also be served from GitHub Pages as static files.
