@@ -554,3 +554,75 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--mu
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Universal format converter */
+.converter-section { background: var(--bg); }
+.converter-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+.converter-heading h2 { max-width: 690px; margin: 8px 0 0; font-size: clamp(26px, 3.1vw, 38px); line-height: 1.25; letter-spacing: -.05em; }
+.converter-heading p { max-width: 610px; margin: 10px 0 0; color: var(--muted); font-size: 11px; line-height: 1.8; }
+.converter-header-badge { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 6px; padding: 9px 12px; color: var(--primary); border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--border)); border-radius: 99px; background: var(--surface); font-size: 9px; font-weight: 680; white-space: nowrap; }
+.converter-header-badge > span:first-child { font-size: 15px; }
+.converter-panel { max-width: 920px; margin-inline: auto; padding: 24px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-md); }
+.converter-panel-top { display: flex; align-items: center; gap: 11px; padding-bottom: 17px; border-bottom: 1px solid var(--border); }
+.converter-step-number { width: 30px; height: 30px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 9px; color: var(--primary); background: var(--primary-soft); font-size: 10px; font-weight: 800; }
+.converter-panel-title strong, .converter-panel-title small { display: block; }
+.converter-panel-title strong { font-size: 12px; }
+.converter-panel-title small { margin-top: 2px; color: var(--muted); font-size: 9px; }
+.converter-preview-pill { display: inline-flex; align-items: center; gap: 6px; margin-inline-start: auto; padding: 6px 9px; border: 1px solid var(--border); border-radius: 99px; color: var(--muted); background: var(--surface-2); font-size: 8px; white-space: nowrap; }
+.converter-preview-pill i { width: 6px; height: 6px; border-radius: 50%; background: #eead5b; }
+.converter-controls { display: grid; grid-template-columns: minmax(0, 1fr) 43px minmax(0, 1fr); align-items: end; gap: 15px; padding-block: 22px 19px; }
+.conversion-field { min-width: 0; }
+.conversion-field label { display: block; margin-bottom: 7px; font-size: 10px; font-weight: 740; }
+.select-shell { min-height: 51px; display: flex; align-items: center; gap: 10px; padding-inline: 11px; border: 1px solid var(--border-strong); border-radius: 11px; background: var(--surface); transition: border-color .18s ease, box-shadow .18s ease; }
+.select-shell:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 12%, transparent); }
+.select-format-icon { width: 31px; height: 31px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 8px; color: #d55d67; background: #fff0f1; font-size: 7px; font-weight: 850; letter-spacing: .02em; }
+.output-format-icon { color: #4877c8; background: #edf4ff; }
+.select-shell select { min-width: 0; flex: 1; appearance: none; padding: 9px 0; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 10px; font-weight: 650; cursor: pointer; }
+.select-shell select option { color: #17162a; background: #fff; }
+.select-shell > svg { width: 15px; height: 15px; flex: 0 0 auto; fill: none; stroke: var(--muted); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.conversion-field > small { display: block; margin-top: 6px; color: var(--muted-2); font-size: 8px; }
+.swap-formats { width: 37px; height: 37px; display: grid; place-items: center; align-self: center; margin-top: 20px; border: 1px solid var(--border); border-radius: 11px; color: var(--primary); background: var(--surface); cursor: pointer; transition: transform .2s ease, border-color .2s ease, background .2s ease; }
+.swap-formats:hover { transform: rotate(180deg); border-color: var(--primary); background: var(--primary-soft); }
+.swap-formats svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.conversion-route { display: flex; align-items: center; gap: 13px; padding: 13px; border: 1px solid var(--border); border-radius: 13px; background: linear-gradient(100deg, color-mix(in srgb, var(--primary-soft) 52%, var(--surface)), color-mix(in srgb, #e8f8f4 36%, var(--surface))); }
+.route-format-block { min-width: 0; display: flex; align-items: center; gap: 9px; flex: 1; }
+.route-format-block > span:last-child { min-width: 0; }
+.route-file-icon { width: 37px; height: 42px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid color-mix(in srgb, #d55d67 18%, var(--border)); border-radius: 8px; color: #d55d67; background: var(--surface); font-size: 7px; font-weight: 850; }
+.route-file-icon-target { color: #4877c8; border-color: color-mix(in srgb, #4877c8 18%, var(--border)); }
+.route-format-block small, .route-format-block strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.route-format-block small { color: var(--muted-2); font-size: 7px; letter-spacing: .1em; font-weight: 750; }
+.route-format-block strong { margin-top: 3px; font-size: 10px; }
+.route-arrow { width: 28px; height: 28px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; color: var(--primary); background: var(--surface); font-size: 15px; }
+.converter-action { min-height: 40px; margin-inline-start: auto; padding: 10px 14px; font-size: 9px; }
+.conversion-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 16px; }
+.conversion-presets > span { margin-inline-end: 2px; color: var(--muted); font-size: 8px; font-weight: 690; }
+.conversion-presets > button { padding: 6px 9px; border: 1px solid var(--border); border-radius: 7px; color: var(--muted); background: var(--surface); font-size: 8px; cursor: pointer; transition: color .18s ease, border-color .18s ease, background .18s ease; }
+.conversion-presets > button:hover { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 40%, var(--border)); background: var(--primary-soft); }
+.converter-disclaimer { display: flex; align-items: flex-start; gap: 7px; margin-top: 15px; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted-2); font-size: 8px; line-height: 1.7; }
+.converter-info-icon { width: 14px; height: 14px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid var(--border-strong); border-radius: 50%; font-size: 8px; font-weight: 750; }
+:root[data-theme="dark"] .select-format-icon { color: #ff9ea8; background: #3b282d; }
+:root[data-theme="dark"] .output-format-icon { color: #9dbfff; background: #26354e; }
+:root[data-theme="dark"] .route-file-icon { color: #ff9ea8; border-color: #52373c; }
+:root[data-theme="dark"] .route-file-icon-target { color: #9dbfff; border-color: #33435a; }
+
+@media (max-width: 720px) {
+  .converter-heading { display: block; }
+  .converter-heading h2 { font-size: 27px; }
+  .converter-header-badge { margin-top: 13px; }
+  .converter-panel { padding: 16px; border-radius: 16px; }
+  .converter-controls { grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr); gap: 7px; padding-block: 17px 15px; }
+  .select-shell { min-height: 46px; gap: 6px; padding-inline: 7px; }
+  .select-format-icon { width: 27px; height: 29px; font-size: 6px; }
+  .select-shell select { font-size: 9px; }
+  .swap-formats { width: 31px; height: 31px; }
+  .swap-formats svg { width: 15px; height: 15px; }
+  .conversion-route { display: grid; grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr); gap: 7px; padding: 10px; }
+  .route-format-block { gap: 6px; }
+  .route-file-icon { width: 30px; height: 35px; }
+  .route-format-block strong { font-size: 8px; }
+  .route-format-block small { font-size: 6px; }
+  .route-arrow { width: 23px; height: 23px; font-size: 12px; }
+  .converter-action { grid-column: 1 / -1; width: 100%; min-height: 38px; margin: 4px 0 0; }
+  .conversion-presets { gap: 6px; }
+  .conversion-presets > span { width: 100%; }
+}

@@ -11,6 +11,8 @@
   const dropZone = $("#drop-zone");
   const uploadSection = $("#upload");
   const uploadResults = $("#upload-results");
+  const sourceSelect = $("#source-format");
+  const targetSelect = $("#target-format");
   const toolDialog = $("#tool-dialog");
   const commandDialog = $("#command-dialog");
   const toast = $("#toast");
@@ -19,6 +21,32 @@
   const selectedFiles = [];
   const localUrls = new WeakMap();
   let renderRevision = 0;
+
+  const formatNames = {
+    pdf: { ar: "PDF", en: "PDF", short: "PDF" },
+    docx: { ar: "Word (.DOCX)", en: "Word (.DOCX)", short: "DOCX" },
+    xlsx: { ar: "Excel (.XLSX)", en: "Excel (.XLSX)", short: "XLSX" },
+    pptx: { ar: "PowerPoint (.PPTX)", en: "PowerPoint (.PPTX)", short: "PPTX" },
+    jpg: { ar: "صورة JPG", en: "JPG image", short: "JPG" },
+    png: { ar: "صورة PNG", en: "PNG image", short: "PNG" },
+    webp: { ar: "صورة WEBP", en: "WEBP image", short: "WEBP" },
+    txt: { ar: "نص TXT", en: "TXT text", short: "TXT" },
+    csv: { ar: "جدول CSV", en: "CSV table", short: "CSV" },
+    html: { ar: "صفحة HTML", en: "HTML page", short: "HTML" }
+  };
+  const conversionTargets = {
+    pdf: ["docx", "xlsx", "pptx", "jpg", "png", "txt"],
+    docx: ["pdf", "txt"],
+    xlsx: ["pdf", "csv"],
+    pptx: ["pdf", "jpg"],
+    jpg: ["pdf", "png"],
+    png: ["pdf", "jpg"],
+    webp: ["pdf", "jpg", "png"],
+    txt: ["pdf", "docx"],
+    csv: ["xlsx", "pdf"],
+    html: ["pdf", "txt"]
+  };
+  const defaultTarget = { pdf: "docx", docx: "pdf", xlsx: "pdf", pptx: "pdf", jpg: "pdf", png: "pdf", webp: "pdf", txt: "pdf", csv: "xlsx", html: "pdf" };
 
   const copy = {
     ar: {
@@ -46,8 +74,11 @@
       toastLocalOnly: "هذه الخطوة توضيحية فقط — الملف لم يُرفع ولم تتم معالجته.",
       toastRemoved: "تمت إزالة الملفات من المعاينة المحلية.",
       uploadWarning: "تعذر قراءة هذا الملف محليًا، لكن لم يتم رفعه.",
+      converterNeedsFile: "اختار ملفًا من منطقة الرفع أولًا؛ الملف يظل على جهازك.",
+      converterMismatch: "صيغة الملف المختارة مختلفة عن صيغة المصدر. تم تحديث المصدر حسب الملف.",
+      conversionPreview: "المحوّل يعرض اختيار الصيغ فقط؛ خدمة التحويل الفعلية غير متصلة بعد، ولم يتم إنشاء ملف ناتج.",
       typeSuggestions: {
-        pdf: ["استخراج النص", "تلخيص المستند", "أدوات PDF"],
+        pdf: ["تحويل إلى Word", "تحويل إلى Excel", "أدوات PDF"],
         office: ["تحويل الصيغة", "استخراج المحتوى", "مساعد المستندات"],
         image: ["استخراج النص", "صورة إلى PDF", "الماسح الذكي"],
         sheet: ["استخراج الجداول", "تحويل الصيغة", "مساعد المستندات"],
@@ -91,8 +122,11 @@
       toastLocalOnly: "This step is illustrative only — the file was not uploaded or processed.",
       toastRemoved: "Files were removed from the local preview.",
       uploadWarning: "This file could not be read locally, but it was not uploaded.",
+      converterNeedsFile: "Choose a file in the upload area first; it stays on your device.",
+      converterMismatch: "The selected file format differs from the source format. The source was updated to match the file.",
+      conversionPreview: "The converter only previews format selection; the actual conversion service is not connected, so no output file was created.",
       typeSuggestions: {
-        pdf: ["Extract text", "Summarize document", "PDF tools"],
+        pdf: ["Convert to Word", "Convert to Excel", "PDF tools"],
         office: ["Convert format", "Extract content", "Document assistant"],
         image: ["Extract text", "Image to PDF", "Smart scanner"],
         sheet: ["Extract tables", "Convert format", "Document assistant"],
@@ -121,6 +155,61 @@
   }
   function currentCopy() { return copy[language] || copy.ar; }
 
+  function formatLabel(format) {
+    return formatNames[format]?.[language] || String(format || "").toUpperCase();
+  }
+
+  function updateConversionRoute() {
+    if (!sourceSelect || !targetSelect) return;
+    const source = sourceSelect.value || "pdf";
+    const target = targetSelect.value || defaultTarget[source] || "docx";
+    const sourceInfo = formatNames[source] || { short: source.toUpperCase() };
+    const targetInfo = formatNames[target] || { short: target.toUpperCase() };
+    const setText = (selector, text) => { const node = $(selector); if (node) node.textContent = text; };
+    setText("#source-format-icon", sourceInfo.short);
+    setText("#target-format-icon", targetInfo.short);
+    setText("#route-source-icon", sourceInfo.short);
+    setText("#route-target-icon", targetInfo.short);
+    setText("#route-source-label", formatLabel(source));
+    setText("#route-target-label", formatLabel(target));
+  }
+
+  function updateConversionTargets(preferredTarget) {
+    if (!sourceSelect || !targetSelect) return;
+    const source = conversionTargets[sourceSelect.value] ? sourceSelect.value : "pdf";
+    const available = conversionTargets[source];
+    const preferred = preferredTarget || targetSelect.value;
+    targetSelect.innerHTML = available.map((format) => `<option value="${format}">${escapeHTML(formatLabel(format))}</option>`).join("");
+    targetSelect.value = available.includes(preferred) ? preferred : (defaultTarget[source] || available[0]);
+    updateConversionRoute();
+  }
+
+  function formatFromFile(file) {
+    const extension = getExtension(file);
+    const aliases = { jpeg: "jpg", doc: "docx", xls: "xlsx", ppt: "pptx" };
+    const format = aliases[extension] || extension;
+    return conversionTargets[format] ? format : null;
+  }
+
+  function setConversionFromFile(file) {
+    const detected = formatFromFile(file);
+    if (!detected || !sourceSelect) return;
+    sourceSelect.value = detected;
+    updateConversionTargets(defaultTarget[detected]);
+  }
+
+  function goToConverter() {
+    const section = $("#converter");
+    if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function applyConversionPreset(value) {
+    const [source, target] = String(value || "").split(":");
+    if (!conversionTargets[source] || !conversionTargets[source].includes(target)) return;
+    sourceSelect.value = source;
+    updateConversionTargets(target);
+  }
+
   function applyLanguage(nextLanguage) {
     language = nextLanguage === "en" ? "en" : "ar";
     root.lang = language;
@@ -139,11 +228,15 @@
     $("#theme-toggle").setAttribute("aria-label", language === "ar" ? "تغيير المظهر" : "Toggle theme");
     $("#menu-toggle").setAttribute("aria-label", language === "ar" ? "فتح القائمة" : "Open navigation menu");
     dropZone.setAttribute("aria-label", language === "ar" ? "اختيار ملف للمعاينة" : "Choose a file to preview");
+    sourceSelect.setAttribute("aria-label", language === "ar" ? "صيغة الملف" : "Source format");
+    targetSelect.setAttribute("aria-label", language === "ar" ? "صيغة الناتج" : "Output format");
+    $("#swap-formats").setAttribute("aria-label", language === "ar" ? "تبديل صيغ التحويل" : "Swap conversion formats");
     document.title = language === "ar" ? "Eltaranisi Service+ — حوّل مستنداتك لأي شيء" : "Eltaranisi Service+ — Turn your documents into anything";
     const metaDescription = $('meta[name="description"]');
     if (metaDescription) metaDescription.content = language === "ar"
       ? "Eltaranisi Service+ — مساحة عمل ذكية لمسح المستندات وتحويلها وفهمها."
       : "Eltaranisi Service+ — an intelligent workspace to scan, convert, and understand documents.";
+    if (sourceSelect && targetSelect) updateConversionTargets(targetSelect.value);
     if (selectedFiles.length) renderFiles();
   }
 
@@ -220,6 +313,7 @@
     }
     if (selectedFiles.length >= 10 && incoming.length > added) showToast(currentCopy().tooMany);
     if (added === 0 && selectedFiles.length === 0) return;
+    if (selectedFiles.length) setConversionFromFile(selectedFiles[0]);
     renderFiles();
     if (added) uploadResults.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
@@ -325,6 +419,23 @@
     else toolDialog.setAttribute("open", "");
   }
 
+  function openConversionDialog() {
+    const source = sourceSelect.value || "pdf";
+    const target = targetSelect.value || "docx";
+    const file = selectedFiles[0];
+    toolDialogTitle.textContent = `${formatLabel(source)} → ${formatLabel(target)}`;
+    toolDialogDescription.textContent = currentCopy().tools.convert.description;
+    toolDialogNote.textContent = currentCopy().conversionPreview;
+    toolDialogFile.hidden = false;
+    if (file) {
+      toolDialogFile.innerHTML = `<span class="file-type-tile">${escapeHTML(getExtensionLabel(file))}</span><span>${escapeHTML(file.name)} · ${escapeHTML(humanSize(file.size))}</span>`;
+    } else {
+      toolDialogFile.textContent = currentCopy().noFile;
+    }
+    if (typeof toolDialog.showModal === "function") toolDialog.showModal();
+    else toolDialog.setAttribute("open", "");
+  }
+
   function closeDialog(dialog) {
     if (typeof dialog.close === "function" && dialog.open) dialog.close();
     else dialog.removeAttribute("open");
@@ -422,11 +533,46 @@
       return;
     }
     const suggestion = event.target.closest("[data-suggest-tool]");
-    if (suggestion) openToolDialog(suggestion.dataset.suggestTool);
+    if (suggestion) {
+      if (suggestion.dataset.suggestTool === "convert") goToConverter();
+      else openToolDialog(suggestion.dataset.suggestTool);
+    }
+  });
+
+  // Interactive conversion selectors and route preview.
+  sourceSelect.addEventListener("change", () => updateConversionTargets(defaultTarget[sourceSelect.value]));
+  targetSelect.addEventListener("change", updateConversionRoute);
+  $$("[data-preset]").forEach((button) => button.addEventListener("click", () => applyConversionPreset(button.dataset.preset)));
+  $("#swap-formats").addEventListener("click", () => {
+    const source = sourceSelect.value;
+    const target = targetSelect.value;
+    if (conversionTargets[target]?.includes(source)) {
+      sourceSelect.value = target;
+      updateConversionTargets(source);
+    } else {
+      showToast(language === "ar" ? "المسار العكسي غير متاح في هذه القائمة." : "That reverse conversion is not in this list.");
+    }
+  });
+  $("#convert-action").addEventListener("click", () => {
+    if (!selectedFiles.length) {
+      showToast(currentCopy().converterNeedsFile);
+      openUpload();
+      return;
+    }
+    const detected = formatFromFile(selectedFiles[0]);
+    if (detected && detected !== sourceSelect.value) {
+      setConversionFromFile(selectedFiles[0]);
+      showToast(currentCopy().converterMismatch);
+      return;
+    }
+    openConversionDialog();
   });
 
   // Tool cards and plan cards open honest, explanatory preview panels.
-  $$('[data-tool]').forEach((button) => button.addEventListener("click", () => openToolDialog(button.dataset.tool)));
+  $$('[data-tool]').forEach((button) => button.addEventListener("click", () => {
+    if (button.dataset.tool === "convert") goToConverter();
+    else openToolDialog(button.dataset.tool);
+  }));
   $$('[data-plan]').forEach((button) => button.addEventListener("click", () => openToolDialog(button.dataset.plan)));
   $$('[data-demo-action="assistant"]').forEach((button) => button.addEventListener("click", () => openToolDialog("assistant")));
   $$('[data-close-dialog]').forEach((button) => button.addEventListener("click", () => closeDialog(toolDialog)));
@@ -458,6 +604,7 @@
     const command = button.dataset.command;
     closeDialog(commandDialog);
     if (command === "upload") openUpload();
+    if (command === "convert") goToConverter();
     if (command === "tools") $("#tools").scrollIntoView({ behavior: "smooth" });
     if (command === "assistant") openToolDialog("assistant");
     if (command === "theme") applyTheme(root.dataset.theme === "dark" ? "light" : "dark", true);

@@ -7,6 +7,7 @@ A responsive, bilingual (Arabic RTL / English LTR) front-end preview based on th
 - Arabic/English language toggle and light/dark theme.
 - Responsive navigation and command palette (`Ctrl/Cmd + K`).
 - Drag-and-drop or local file selection, file name/type/size display, local image preview, and a short local text preview.
+- A bilingual conversion dropdown with common routes including PDF → Word/Excel/PowerPoint/image, Office → PDF, image → PDF, and text/CSV routes.
 - Interactive tool/plan dialogs and FAQ disclosures.
 - Files are never uploaded by this UI preview.
 

@@ -28,6 +28,7 @@
       </a>
 
       <nav class="main-nav" id="main-nav" aria-label="Main navigation">
+        <a href="#converter" data-ar="المحوّل" data-en="Converter">المحوّل</a>
         <a href="#tools" data-ar="الأدوات" data-en="Tools">الأدوات</a>
         <a href="#intelligence" data-ar="الذكاء الاصطناعي" data-en="AI workspace">الذكاء الاصطناعي</a>
         <a href="#how-it-works" data-ar="كيف يعمل" data-en="How it works">كيف يعمل</a>
@@ -51,6 +52,7 @@
       </div>
     </div>
     <nav class="mobile-nav wrap" id="mobile-nav" aria-label="Mobile navigation" hidden>
+      <a href="#converter" data-ar="المحوّل" data-en="Converter">المحوّل</a>
       <a href="#tools" data-ar="الأدوات" data-en="Tools">الأدوات</a>
       <a href="#intelligence" data-ar="الذكاء الاصطناعي" data-en="AI workspace">الذكاء الاصطناعي</a>
       <a href="#how-it-works" data-ar="كيف يعمل" data-en="How it works">كيف يعمل</a>
@@ -143,6 +145,78 @@
         <div class="upload-results" id="upload-results" hidden aria-live="polite"></div>
       </div>
     </section>
+
+  <section class="section converter-section" id="converter">
+    <div class="wrap">
+      <div class="converter-heading">
+        <div>
+          <span class="section-label" data-ar="محول الصيغ" data-en="FORMAT CONVERTER">محول الصيغ</span>
+          <h2 data-ar="PDF إلى Word وباقي التحويلات في مكان واحد" data-en="PDF to Word and more, all in one place">PDF إلى Word وباقي التحويلات في مكان واحد</h2>
+          <p data-ar="اختار صيغة الملف وصيغة الناتج من القوائم المنسدلة. لو رفعت ملفًا، هنكتشف صيغته محليًا ونختارها لك." data-en="Choose the source and output formats from the dropdowns. If you select a file, its format is detected locally and preselected for you.">اختار صيغة الملف وصيغة الناتج من القوائم المنسدلة. لو رفعت ملفًا، هنكتشف صيغته محليًا ونختارها لك.</p>
+        </div>
+        <span class="converter-header-badge"><span>↔</span><span data-ar="تحويل شامل" data-en="Universal conversion">تحويل شامل</span></span>
+      </div>
+
+      <div class="converter-panel">
+        <div class="converter-panel-top">
+          <span class="converter-step-number">01</span>
+          <div class="converter-panel-title"><strong data-ar="حدد صيغ التحويل" data-en="Select conversion formats">حدد صيغ التحويل</strong><small data-ar="من صيغة الملف الحالي إلى الصيغة المطلوبة" data-en="From your current file format to the one you need">من صيغة الملف الحالي إلى الصيغة المطلوبة</small></div>
+          <span class="converter-preview-pill"><i></i><span data-ar="معاينة تفاعلية" data-en="Interactive preview">معاينة تفاعلية</span></span>
+        </div>
+
+        <div class="converter-controls">
+          <div class="conversion-field">
+            <label for="source-format" data-ar="صيغة الملف" data-en="Source format">صيغة الملف</label>
+            <div class="select-shell">
+              <span class="select-format-icon" id="source-format-icon">PDF</span>
+              <select id="source-format" aria-label="صيغة الملف">
+                <option value="pdf" data-ar="PDF" data-en="PDF">PDF</option>
+                <option value="docx" data-ar="Word (.DOCX)" data-en="Word (.DOCX)">Word (.DOCX)</option>
+                <option value="xlsx" data-ar="Excel (.XLSX)" data-en="Excel (.XLSX)">Excel (.XLSX)</option>
+                <option value="pptx" data-ar="PowerPoint (.PPTX)" data-en="PowerPoint (.PPTX)">PowerPoint (.PPTX)</option>
+                <option value="jpg" data-ar="صورة JPG" data-en="JPG image">صورة JPG</option>
+                <option value="png" data-ar="صورة PNG" data-en="PNG image">صورة PNG</option>
+                <option value="webp" data-ar="صورة WEBP" data-en="WEBP image">صورة WEBP</option>
+                <option value="txt" data-ar="نص TXT" data-en="TXT text">نص TXT</option>
+                <option value="csv" data-ar="جدول CSV" data-en="CSV table">جدول CSV</option>
+                <option value="html" data-ar="صفحة HTML" data-en="HTML page">صفحة HTML</option>
+              </select>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg>
+            </div>
+            <small data-ar="ابدأ باختيار نوع مستندك." data-en="Choose the type of your document.">ابدأ باختيار نوع مستندك.</small>
+          </div>
+
+          <button class="swap-formats" id="swap-formats" type="button" aria-label="تبديل الصيغ" title="تبديل الصيغ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h12m0 0-3-3m3 3-3 3M17 17H5m0 0 3 3m-3-3 3-3"/></svg></button>
+
+          <div class="conversion-field">
+            <label for="target-format" data-ar="صيغة الناتج" data-en="Output format">صيغة الناتج</label>
+            <div class="select-shell target-select-shell">
+              <span class="select-format-icon output-format-icon" id="target-format-icon">DOCX</span>
+              <select id="target-format" aria-label="صيغة الناتج"></select>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 7 5 5 5-5"/></svg>
+            </div>
+            <small data-ar="القائمة تتغير حسب صيغة المصدر." data-en="Options update based on the source format.">القائمة تتغير حسب صيغة المصدر.</small>
+          </div>
+        </div>
+
+        <div class="conversion-route" aria-live="polite">
+          <div class="route-format-block"><span class="route-file-icon" id="route-source-icon">PDF</span><span><small data-ar="الملف الأصلي" data-en="SOURCE FILE">الملف الأصلي</small><strong id="route-source-label">PDF</strong></span></div>
+          <span class="route-arrow" aria-hidden="true">→</span>
+          <div class="route-format-block"><span class="route-file-icon route-file-icon-target" id="route-target-icon">DOCX</span><span><small data-ar="الناتج المطلوب" data-en="OUTPUT FORMAT">الناتج المطلوب</small><strong id="route-target-label">Word (.DOCX)</strong></span></div>
+          <button class="button button-primary converter-action" id="convert-action" type="button"><span data-ar="ابدأ التحويل" data-en="Start conversion">ابدأ التحويل</span><span aria-hidden="true">↗</span></button>
+        </div>
+
+        <div class="conversion-presets">
+          <span data-ar="تحويلات شائعة" data-en="Popular conversions">تحويلات شائعة</span>
+          <button type="button" data-preset="pdf:docx" data-ar="PDF إلى Word" data-en="PDF to Word">PDF إلى Word</button>
+          <button type="button" data-preset="pdf:xlsx" data-ar="PDF إلى Excel" data-en="PDF to Excel">PDF إلى Excel</button>
+          <button type="button" data-preset="docx:pdf" data-ar="Word إلى PDF" data-en="Word to PDF">Word إلى PDF</button>
+          <button type="button" data-preset="jpg:pdf" data-ar="صورة إلى PDF" data-en="Image to PDF">صورة إلى PDF</button>
+        </div>
+        <div class="converter-disclaimer"><span class="converter-info-icon">i</span><span data-ar="المعاينة تعرض خيارات التحويل فقط. محرك التحويل غير متصل بعد، لذلك لن يتم إنشاء ملف ناتج أو إرسال ملفاتك." data-en="This preview displays conversion options only. The conversion engine is not connected, so no output file is created and your files are not uploaded.">المعاينة تعرض خيارات التحويل فقط. محرك التحويل غير متصل بعد، لذلك لن يتم إنشاء ملف ناتج أو إرسال ملفاتك.</span></div>
+      </div>
+    </div>
+  </section>
 
     <section class="section tools-section" id="tools">
       <div class="wrap">
@@ -290,6 +364,7 @@
     <div class="command-search-row"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.7" cy="8.7" r="5.7"/><path d="m13 13 4 4"/></svg><input id="command-search" type="search" data-placeholder-ar="ابحث عن أداة أو إجراء..." data-placeholder-en="Search tools or actions..." placeholder="ابحث عن أداة أو إجراء..." aria-label="Search commands"><kbd>ESC</kbd></div>
     <div class="command-list"><p id="command-title" data-ar="إجراءات سريعة" data-en="Quick actions">إجراءات سريعة</p>
       <button type="button" data-command="upload" data-ar="رفع مستند للمعاينة" data-en="Choose a file to preview"><span class="command-item-icon">↑</span><span data-ar="رفع مستند للمعاينة" data-en="Choose a file to preview">رفع مستند للمعاينة</span><kbd>↵</kbd></button>
+      <button type="button" data-command="convert" data-ar="فتح محول الملفات" data-en="Open file converter"><span class="command-item-icon">⇄</span><span data-ar="فتح محول الملفات" data-en="Open file converter">فتح محول الملفات</span><kbd>↵</kbd></button>
       <button type="button" data-command="tools" data-ar="استكشف الأدوات" data-en="Explore tools"><span class="command-item-icon">⌘</span><span data-ar="استكشف الأدوات" data-en="Explore tools">استكشف الأدوات</span><kbd>↵</kbd></button>
       <button type="button" data-command="assistant" data-ar="مساعد المستندات" data-en="Document assistant"><span class="command-item-icon">✦</span><span data-ar="مساعد المستندات" data-en="Document assistant">مساعد المستندات</span><kbd>↵</kbd></button>
       <button type="button" data-command="theme" data-ar="تبديل المظهر" data-en="Toggle theme"><span class="command-item-icon">◐</span><span data-ar="تبديل المظهر" data-en="Toggle theme">تبديل المظهر</span><kbd>↵</kbd></button>
