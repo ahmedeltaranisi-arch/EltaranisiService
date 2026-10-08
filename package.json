@@ -1,0 +1,11 @@
+{
+  "name": "eltaranisi-service-plus-preview",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Interactive, bilingual UI preview for Eltaranisi Service+.",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs"
+  }
+}
