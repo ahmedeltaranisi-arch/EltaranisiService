@@ -126,24 +126,7 @@
         </div>
       </div>
 
-      <div class="upload-panel wrap" id="upload">
-        <div class="upload-panel-heading">
-          <div><span class="section-label" data-ar="ابدأ من هنا" data-en="START HERE">ابدأ من هنا</span><h2 data-ar="جرّب رفع ملفك" data-en="Try a file in the preview">جرّب رفع ملفك</h2></div>
-          <span class="local-badge"><i></i><span data-ar="محلي على جهازك" data-en="Local to your device">محلي على جهازك</span></span>
-        </div>
-        <div class="drop-zone" id="drop-zone" tabindex="0" role="group" aria-label="اختيار ملف للمعاينة">
-          <input id="file-input" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.svg,.tif,.tiff,.bmp,.txt,.csv,.html,.md,image/*,text/plain,text/csv,application/pdf" hidden>
-          <div class="upload-icon-wrap" aria-hidden="true">
-            <svg class="upload-icon" viewBox="0 0 32 32" fill="none"><path d="M16 21V5m0 0-5.5 5.5M16 5l5.5 5.5M7 20.5v4A2.5 2.5 0 0 0 9.5 27h13a2.5 2.5 0 0 0 2.5-2.5v-4"/></svg>
-            <span class="upload-spark">✦</span>
-          </div>
-          <div class="drop-copy"><strong data-ar="اسحب الملف وأفلته هنا" data-en="Drop a file here">اسحب الملف وأفلته هنا</strong><span data-ar="أو اضغط لاختيار ملف من جهازك" data-en="or click to choose from your device">أو اضغط لاختيار ملف من جهازك</span></div>
-          <button class="button button-outline choose-file-button" id="choose-file" type="button" data-ar="اختيار ملف" data-en="Choose file">اختيار ملف</button>
-          <div class="format-row"><span>PDF</span><span>DOCX</span><span>XLSX</span><span>PPTX</span><span>JPG</span><span>PNG</span><span data-ar="وغيرها" data-en="and more">وغيرها</span></div>
-        </div>
-        <p class="upload-disclaimer"><span class="info-icon">i</span><span data-ar="هذه معاينة للواجهة فقط: نعرض اسم الملف ونوعه محليًا. أدوات التحويل وOCR والذكاء الاصطناعي تحتاج إلى ربط خدمات المعالجة قبل الإطلاق." data-en="This is a UI preview only: filename and type are shown locally. Conversion, OCR, and AI tools need processing services connected before launch.">هذه معاينة للواجهة فقط: نعرض اسم الملف ونوعه محليًا. أدوات التحويل وOCR والذكاء الاصطناعي تحتاج إلى ربط خدمات المعالجة قبل الإطلاق.</span></p>
-        <div class="upload-results" id="upload-results" hidden aria-live="polite"></div>
-      </div>
+
     </section>
 
   <section class="section converter-section" id="converter">
@@ -158,8 +141,29 @@
       </div>
 
       <div class="converter-panel">
+
+
+      <div class="upload-panel converter-upload-panel" id="upload">
+        <div class="upload-panel-heading">
+          <div><span class="section-label" data-ar="الخطوة 1 — ارفع ملفك" data-en="STEP 1 — UPLOAD A FILE">الخطوة 1 — ارفع ملفك</span><h2 data-ar="اختر مستندك للتحويل" data-en="Choose a document to convert">اختر مستندك للتحويل</h2></div>
+          <span class="local-badge"><i></i><span data-ar="محلي على جهازك" data-en="Local to your device">محلي على جهازك</span></span>
+        </div>
+        <div class="drop-zone" id="drop-zone" tabindex="0" role="group" aria-label="اختيار ملف للمعاينة">
+          <input id="file-input" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.svg,.tif,.tiff,.bmp,.txt,.csv,.html,.md,image/*,text/plain,text/csv,application/pdf" hidden>
+          <div class="upload-icon-wrap" aria-hidden="true">
+            <svg class="upload-icon" viewBox="0 0 32 32" fill="none"><path d="M16 21V5m0 0-5.5 5.5M16 5l5.5 5.5M7 20.5v4A2.5 2.5 0 0 0 9.5 27h13a2.5 2.5 0 0 0 2.5-2.5v-4"/></svg>
+            <span class="upload-spark">✦</span>
+          </div>
+          <div class="drop-copy"><strong data-ar="اسحب الملف وأفلته هنا" data-en="Drop a file here">اسحب الملف وأفلته هنا</strong><span data-ar="أو اضغط لاختيار ملف من جهازك" data-en="or click to choose from your device">أو اضغط لاختيار ملف من جهازك</span></div>
+          <button class="button button-outline choose-file-button" id="choose-file" type="button" data-ar="اختيار ملف" data-en="Choose file">اختيار ملف</button>
+          <div class="format-row"><span>PDF</span><span>DOCX</span><span>XLSX</span><span>PPTX</span><span>JPG</span><span>PNG</span><span>WEBP</span><span>TXT</span><span>CSV</span><span data-ar="وغيرها" data-en="and more">وغيرها</span></div>
+        </div>
+        <p class="upload-disclaimer"><span class="info-icon">i</span><span data-ar="اختيار الملف ومعاينته يتمّان على جهازك فقط. محرك التحويل يحتاج إلى ربط قبل إنشاء أي ملف ناتج." data-en="File selection and preview stay on your device. A conversion engine must be connected before any output file can be created.">اختيار الملف ومعاينته يتمّان على جهازك فقط. محرك التحويل يحتاج إلى ربط قبل إنشاء أي ملف ناتج.</span></p>
+        <div class="upload-results" id="upload-results" hidden aria-live="polite"></div>
+      </div>
+
         <div class="converter-panel-top">
-          <span class="converter-step-number">01</span>
+          <span class="converter-step-number">02</span>
           <div class="converter-panel-title"><strong data-ar="حدد صيغ التحويل" data-en="Select conversion formats">حدد صيغ التحويل</strong><small data-ar="من صيغة الملف الحالي إلى الصيغة المطلوبة" data-en="From your current file format to the one you need">من صيغة الملف الحالي إلى الصيغة المطلوبة</small></div>
           <span class="converter-preview-pill"><i></i><span data-ar="معاينة تفاعلية" data-en="Interactive preview">معاينة تفاعلية</span></span>
         </div>

@@ -626,3 +626,127 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--mu
   .conversion-presets { gap: 6px; }
   .conversion-presets > span { width: 100%; }
 }
+
+/* Readability and unified upload-to-convert flow */
+body { font-size: 16px; }
+.announcement-bar { font-size: 12px; }
+.main-nav a, .mobile-nav a { font-size: 13px; }
+.brand-wordmark strong { font-size: 16px; }
+.brand-wordmark > span { font-size: 11px; }
+.command-trigger { font-size: 12px; }
+.button { font-size: 13px; }
+.button-small { font-size: 12px; }
+.button-large { font-size: 14px; }
+.eyebrow { font-size: 12px; }
+.hero h1 { font-size: clamp(48px, 5.25vw, 72px); }
+.hero-lead { font-size: 17px; line-height: 1.8; }
+.local-note { font-size: 12px; }
+.hero-proof { font-size: 12px; }
+.section-label { font-size: 11px; }
+.upload-panel-heading h2 { font-size: 23px; }
+.drop-copy strong { font-size: 17px; }
+.drop-copy > span { font-size: 13px; }
+.choose-file-button { font-size: 13px; }
+.format-row span { font-size: 10px; }
+.upload-disclaimer { font-size: 11px; }
+.file-meta strong { font-size: 13px; }
+.file-meta span { font-size: 10px; }
+.results-heading { font-size: 13px; }
+.clear-files { font-size: 11px; }
+.local-preview-copy strong { font-size: 12px; }
+.local-preview-copy p { font-size: 11px; }
+.suggestion-row > span:first-child, .suggestion-chip { font-size: 11px; }
+.section-heading h2, .intelligence-copy h2, .privacy-copy h2, .faq-intro h2, .final-cta h2 { font-size: clamp(31px, 3.5vw, 44px); }
+.section-heading p { font-size: 14px; }
+.tool-card { min-height: 112px; }
+.tool-card-text strong { font-size: 14px; }
+.tool-card-text small { font-size: 12px; }
+.tools-footnote { font-size: 11px; }
+.intelligence-copy p, .privacy-copy p, .faq-intro p { font-size: 14px; }
+.text-link { font-size: 13px; }
+.ai-card-top strong { font-size: 12px; }
+.ai-card-top small { font-size: 10px; }
+.assistant-message { font-size: 11px; }
+.assistant-system-message strong { font-size: 11px; }
+.assistant-system-message p { font-size: 10px; }
+.suggested-prompts span { font-size: 10px; }
+.assistant-input { font-size: 10px; }
+.ai-card-caption { font-size: 9px; }
+.step-card h3 { font-size: 17px; }
+.step-card p { font-size: 11px; }
+.privacy-points > span { font-size: 11px; }
+.plan-kicker { font-size: 10px; }
+.plan-card h3 { font-size: 25px; }
+.plan-card > p, .plan-card ul { font-size: 12px; }
+.plan-action { font-size: 12px; }
+.pricing-note { font-size: 11px; }
+.faq-item summary { font-size: 14px; }
+.faq-item p { font-size: 12px; }
+.final-cta p { font-size: 14px; }
+.footer-brand-column > p, .footer-note-column > p { font-size: 11px; }
+.footer-column > strong { font-size: 12px; }
+.footer-column > a { font-size: 11px; }
+.footer-bottom { font-size: 10px; }
+.dialog-content > p { font-size: 13px; }
+.dialog-notice p { font-size: 11px; }
+.dialog-actions .button { font-size: 12px; }
+.converter-heading h2 { font-size: clamp(32px, 3.6vw, 44px); }
+.converter-heading p { font-size: 14px; }
+.converter-header-badge { font-size: 11px; }
+.converter-panel { max-width: 1000px; padding: 30px; }
+.converter-panel-title strong { font-size: 15px; }
+.converter-panel-title small { font-size: 12px; }
+.converter-preview-pill { font-size: 10px; }
+.converter-upload-panel { width: 100%; max-width: none; margin: 22px 0 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.converter-upload-panel .upload-panel-heading { margin-bottom: 13px; }
+.converter-upload-panel .drop-zone { min-height: 185px; padding-block: 23px 18px; }
+.converter-upload-panel .upload-icon-wrap { width: 54px; height: 54px; }
+.converter-upload-panel .upload-icon { width: 27px; height: 27px; }
+.converter-upload-panel .upload-results { margin-top: 15px; padding-top: 15px; }
+.converter-panel-top { margin-top: 22px; padding-top: 19px; border-top: 1px solid var(--border); }
+.conversion-field label { font-size: 13px; }
+.select-shell { min-height: 58px; }
+.select-shell select { font-size: 13px; }
+.conversion-field > small { font-size: 10px; }
+.swap-formats { width: 42px; height: 42px; }
+.route-file-icon { width: 43px; height: 48px; font-size: 9px; }
+.route-format-block small { font-size: 9px; }
+.route-format-block strong { font-size: 13px; }
+.converter-action { min-height: 47px; padding-inline: 18px; font-size: 13px; }
+.conversion-presets > span { font-size: 11px; }
+.conversion-presets > button { padding: 8px 11px; font-size: 10px; }
+.converter-disclaimer { font-size: 11px; }
+
+@media (max-width: 720px) {
+  body { font-size: 15px; }
+  .announcement-bar { font-size: 10px; }
+  .main-nav a, .mobile-nav a { font-size: 12px; }
+  .hero h1 { font-size: clamp(40px, 11vw, 58px); }
+  .hero-lead { font-size: 15px; }
+  .local-note, .hero-proof { font-size: 11px; }
+  .section-heading h2, .intelligence-copy h2, .privacy-copy h2, .faq-intro h2, .final-cta h2 { font-size: clamp(28px, 7.5vw, 38px); }
+  .section-heading p, .intelligence-copy p, .privacy-copy p, .faq-intro p { font-size: 12px; }
+  .tool-card { min-height: 98px; }
+  .tool-card-text strong { font-size: 12px; }
+  .tool-card-text small { font-size: 10px; }
+  .step-card h3 { font-size: 15px; }
+  .step-card p { font-size: 10px; }
+  .faq-item summary { font-size: 12px; }
+  .faq-item p { font-size: 11px; }
+  .converter-panel { padding: 18px; }
+  .converter-heading h2 { font-size: clamp(28px, 7.5vw, 36px); }
+  .converter-heading p { font-size: 12px; }
+  .converter-upload-panel .drop-zone { min-height: 170px; }
+  .converter-upload-panel .format-row { gap: 5px; }
+  .converter-upload-panel .format-row span { font-size: 9px; }
+  .converter-panel-top { margin-top: 17px; padding-top: 15px; }
+  .converter-panel-title strong { font-size: 13px; }
+  .converter-panel-title small { font-size: 10px; }
+  .conversion-field label { font-size: 11px; }
+  .select-shell { min-height: 50px; }
+  .select-shell select { font-size: 10px; }
+  .route-format-block strong { font-size: 10px; }
+  .conversion-presets > button { font-size: 9px; }
+  .converter-disclaimer { font-size: 9px; }
+  .footer-bottom { font-size: 8px; }
+}
