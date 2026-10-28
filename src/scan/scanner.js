@@ -76,6 +76,8 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
   const status = document.getElementById("scanner-status");
   const filterSelect = document.getElementById("scanner-filter-all");
   const cropFrame = document.getElementById("crop-frame");
+  const cropWrap = document.getElementById("crop-wrap");
+  const caption = document.getElementById("scanner-caption");
   const filesPanel = document.getElementById("scan-files");
   const filesList = document.getElementById("scan-files-list");
   const filesCount = document.getElementById("scan-files-count");
@@ -127,6 +129,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
   }
 
   function refreshFilters() {
+    updateCaption();
     const page = activePage();
     [...filtersStrip.children].forEach((button) => {
       button.classList.toggle("active", Boolean(page) && button.dataset.filter === (page.filter || "original"));
@@ -243,6 +246,28 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
 
   let preview = { canvas: null, scale: 1, quadPx: [] };
 
+  /** Sizes the canvas so it always fits the free space above the tools (no overlap). */
+  function fitStage() {
+    if (!cropFrame || !cropWrap || !stage.width) return;
+    const rect = cropWrap.getBoundingClientRect();
+    if (rect.width < 40 || rect.height < 40) return;
+    const availableWidth = Math.max(80, rect.width - 10);
+    const availableHeight = Math.max(80, rect.height - 10);
+    const ratio = stage.width / stage.height || 1;
+    let width = availableWidth;
+    let height = width / ratio;
+    if (height > availableHeight) {
+      height = availableHeight;
+      width = height * ratio;
+    }
+    cropFrame.style.width = `${Math.round(width)}px`;
+    cropFrame.style.height = `${Math.round(height)}px`;
+  }
+
+  if (typeof ResizeObserver !== "undefined" && cropWrap) {
+    new ResizeObserver(() => fitStage()).observe(cropWrap);
+  }
+
   function drawStage() {
     const page = activePage();
     if (!page) {
@@ -272,7 +297,23 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
       scale: previewCanvas.width / stage.clientWidth || 1,
       quadPx: page.quad.map((point) => ({ x: point.x * previewCanvas.width, y: point.y * previewCanvas.height })),
     };
+    fitStage();
     drawOverlay();
+    updateCaption();
+  }
+
+  function updateCaption() {
+    if (!caption) return;
+    const page = activePage();
+    if (!page) {
+      caption.innerHTML = "";
+      return;
+    }
+    const filter = FILTERS.find((item) => item.id === (page.filter || "original"));
+    const index = state.pages.findIndex((item) => item.id === page.id) + 1;
+    caption.innerHTML = `<span>صفحة ${index} من ${state.pages.length} · ${page.canvas.width}×${page.canvas.height}</span>`
+      + `<span>${filter ? filter.label : "Original"} — ${filter ? filter.arabic : "الأصلية"}`
+      + `${page.autoDetected === false ? " · قص يدوي" : " · اكتشاف تلقائي"}</span>`;
   }
 
   function drawOverlay() {
@@ -300,11 +341,14 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
       overlay.appendChild(line);
     });
 
+    // handle radius in canvas units so it stays ~11 CSS pixels on screen at any zoom
+    const cssWidth = cropFrame ? cropFrame.getBoundingClientRect().width : stage.width;
+    const radius = Math.max(6, Math.min(26, (stage.width / Math.max(1, cssWidth)) * 11));
     points.forEach((point, index) => {
       const handle = document.createElementNS(ns, "circle");
       handle.setAttribute("cx", point.x);
       handle.setAttribute("cy", point.y);
-      handle.setAttribute("r", 16);
+      handle.setAttribute("r", radius);
       handle.setAttribute("class", "crop-handle");
       handle.dataset.index = String(index);
       overlay.appendChild(handle);
@@ -337,6 +381,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     if (!page) return;
     const point = pointerToImage(event);
     page.quad[dragIndex] = point;
+    page.autoDetected = false;
     drawOverlay();
   });
 
@@ -390,7 +435,9 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
       return;
     }
     page.quad = quad;
+    page.autoDetected = true;
     drawStage();
+    onToast("تم اكتشاف حدود الورقة — يمكنك تعديل الزوايا بالسحب");
   }
 
   function deletePage() {
@@ -545,6 +592,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     root.hidden = false;
     document.body.classList.add("scanner-open");
     drawStage();
+    requestAnimationFrame(fitStage);
     refreshFilters();
     updateCount();
     if (state.pages.length) {
@@ -599,8 +647,25 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     if (event.key === "Escape" && !root.hidden) close();
   });
   window.addEventListener("resize", () => {
-    if (!root.hidden) drawOverlay();
+    if (root.hidden) return;
+    fitStage();
+    drawOverlay();
+    updateCaption();
   });
+
+  function updateCaption() {
+    if (!caption) return;
+    const page = activePage();
+    if (!page) {
+      caption.innerHTML = "";
+      return;
+    }
+    const filter = FILTERS.find((item) => item.id === (page.filter || "original"));
+    const index = state.pages.findIndex((item) => item.id === page.id) + 1;
+    caption.innerHTML = `<span>صفحة ${index} من ${state.pages.length} · ${page.canvas.width}×${page.canvas.height}</span>`
+      + `<span>${filter ? filter.label : "Original"} — ${filter ? filter.arabic : "الأصلية"}`
+      + `${page.autoDetected === false ? " · قص يدوي" : " · اكتشاف تلقائي"}</span>`;
+  }
 
   return {
     open,

@@ -222,7 +222,7 @@ export function rectToQuad(rect) {
  * extreme points of that blob become the corner handles.
  * Returns normalized points [TL, TR, BR, BL] or null when nothing convincing is found.
  */
-export function detectQuad(canvas, { samples = 260 } = {}) {
+export function detectQuad(canvas, { samples = 360 } = {}) {
   const scale = Math.min(1, samples / Math.max(canvas.width, canvas.height));
   const width = Math.max(24, Math.round(canvas.width * scale));
   const height = Math.max(24, Math.round(canvas.height * scale));
@@ -234,55 +234,351 @@ export function detectQuad(canvas, { samples = 260 } = {}) {
   const { data } = ctx.getImageData(0, 0, width, height);
 
   const gray = new Float32Array(width * height);
+  const saturation = new Float32Array(width * height);
+  const value = new Float32Array(width * height);
   for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
-    gray[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    gray[p] = 0.299 * r + 0.587 * g + 0.114 * b;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    saturation[p] = max === 0 ? 0 : (max - min) / max;
+    value[p] = max;
   }
-  // box blur removes sensor noise before thresholding
   const radius = Math.max(2, Math.round(Math.max(width, height) / 60));
   const blurred = boxBlurPlane(gray, width, height, radius);
-  const threshold = Math.max(70, otsu(blurred));
+  const threshold = Math.max(60, otsu(blurred));
 
-  const mask = new Uint8Array(width * height);
-  for (let p = 0; p < mask.length; p += 1) mask[p] = blurred[p] >= threshold ? 1 : 0;
-  keepLargestComponent(mask, width, height);
+  // 1. try several brightness thresholds: the document is usually the bright, compact region.
+  //    A higher threshold isolates the paper/card core even on a textured background.
+  const relative = Math.max(1, 255 - threshold);
+  const thresholds = [threshold, threshold + relative * 0.2, threshold + relative * 0.35, threshold + relative * 0.5]
+    .map((value) => Math.min(250, Math.round(value)));
 
-  // drop thin protrusions with one opening pass (erode then dilate)
-  const opened = dilate(erode(mask, width, height), width, height);
-  const blob = new Uint8Array(width * height);
-  for (let p = 0; p < blob.length; p += 1) blob[p] = opened[p] && mask[p] ? 1 : 0;
+  const gradient = sobelPlane(blurred, width, height);
+  let gradientSum = 0;
+  for (let p = 0; p < gradient.length; p += 1) gradientSum += gradient[p];
+  const gradientMean = gradientSum / gradient.length || 1;
 
-  let count = 0;
-  let minX = width; let maxX = 0; let minY = height; let maxY = 0;
+  const minBlob = Math.round(width * height * 0.015);
+  const candidates = [];
+  for (const limit of thresholds) {
+    const mask = new Uint8Array(width * height);
+    for (let p = 0; p < mask.length; p += 1) mask[p] = blurred[p] >= limit ? 1 : 0;
+    const opened = dilate(erode(mask, width, height), width, height);
+    for (let p = 0; p < mask.length; p += 1) mask[p] = opened[p] && mask[p] ? 1 : 0;
+
+    const blobs = componentsOf(mask, width, height, minBlob).slice(0, 2);
+    for (const pixels of blobs) {
+      const points = pixels.map((p) => ({ x: p % width, y: (p - (p % width)) / width }));
+      const hull = convexHull(points);
+      const rect = minAreaRect(hull);
+      if (!rect) continue;
+      const hullArea = Math.abs(hull.reduce((sum, point, index) => {
+        const next = hull[(index + 1) % hull.length];
+        return sum + point.x * next.y - next.x * point.y;
+      }, 0)) / 2;
+      const solidity = Math.max(0, Math.min(1, points.length / Math.max(1, hullArea)));
+      const weight = Math.sqrt(points.length) * solidity * solidity;
+      candidates.push({ quad: rect.corners, points, weight, kind: `rect@${limit}` });
+      candidates.push({ quad: growQuad(rect.corners, 1.03), points, weight: weight * 0.95, kind: `rect3@${limit}` });
+      candidates.push({ quad: growQuad(rect.corners, 1.07), points, weight: weight * 0.9, kind: `rect7@${limit}` });
+    }
+  }
+  if (!candidates.length) return null;
+
+  let best = null;
+  for (const candidate of candidates) {
+    const score = scoreQuadOnEdges(candidate.quad, {
+      gray, gradient, gradientMean, width, height, points: candidate.points,
+    });
+    if (!score) continue;
+    const total = score.total + Math.sqrt(candidate.weight) * 0.02;
+    if (globalThis.__SCAN_DETECT_DEBUG__) {
+      globalThis.__SCAN_DETECT_DEBUG__.push({
+        kind: candidate.kind,
+        quad: candidate.quad.map((p) => [+(p.x / width).toFixed(3), +(p.y / height).toFixed(3)]),
+        step: +score.step.toFixed(2),
+        fill: +score.fill.toFixed(2),
+        total: +total.toFixed(2),
+      });
+    }
+    if (!best || total > best.total) best = { quad: candidate.quad, score, total };
+  }
+  if (!best || best.score.step < 4.5 || best.score.fill < 0.35) return null;
+
+  // coloured strips (national-ID cards, badges, folders) sit right next to the paper core:
+  // grow an edge outward while the pixels just outside are vivid and bright
+  const extended = extendOverColouredArea(best.quad, { saturation, value, width, height });
+
+  // normalize to 0..1 and clamp away from the very edge
+  return extended.map((point) => ({
+    x: Math.min(1, Math.max(0, point.x / width)),
+    y: Math.min(1, Math.max(0, point.y / height)),
+  }));
+}
+
+/**
+ * Grows each quad edge outward while the band just outside is a vivid, bright coloured
+ * area (the blue/red strip on ID cards). Leaves edges untouched on normal backgrounds.
+ */
+function extendOverColouredArea(quad, { saturation, value, width, height }) {
+  const docColour = (x, y) => {
+    const ix = Math.round(x);
+    const iy = Math.round(y);
+    if (ix < 0 || iy < 0 || ix >= width || iy >= height) return false;
+    const index = iy * width + ix;
+    return value[index] >= 140 && saturation[index] >= 0.4;
+  };
+  const centre = {
+    x: (quad[0].x + quad[1].x + quad[2].x + quad[3].x) / 4,
+    y: (quad[0].y + quad[1].y + quad[2].y + quad[3].y) / 4,
+  };
+  const offsets = [0, 0, 0, 0];
+  for (let edge = 0; edge < 4; edge += 1) {
+    const a = quad[edge];
+    const b = quad[(edge + 1) % 4];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const length = Math.hypot(dx, dy) || 1;
+    let nx = dy / length;
+    let ny = -dx / length;
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    if ((mx - centre.x) * nx + (my - centre.y) * ny < 0) { nx = -nx; ny = -ny; }
+    const maxDistance = Math.round(length * 0.25);
+    let gap = 0;
+    let reached = 0;
+    for (let d = 1; d <= maxDistance; d += 1) {
+      let hits = 0;
+      let samples = 0;
+      for (let k = 1; k <= 15; k += 1) {
+        const t = k / 16;
+        if (docColour(a.x + dx * t + nx * d, a.y + dy * t + ny * d)) hits += 1;
+        samples += 1;
+      }
+      if (hits / samples >= 0.6) {
+        reached = d;
+        gap = 0;
+      } else {
+        gap += 1;
+        if (gap > 2) break;
+      }
+    }
+    offsets[edge] = reached;
+  }
+  if (!offsets.some((offset) => offset > 0)) return quad;
+  return quad.map((point, index) => {
+    let x = point.x;
+    let y = point.y;
+    for (const edge of [(index + 3) % 4, index]) {
+      const offset = offsets[edge];
+      if (!offset) continue;
+      const a = quad[edge];
+      const b = quad[(edge + 1) % 4];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const length = Math.hypot(dx, dy) || 1;
+      let nx = dy / length;
+      let ny = -dx / length;
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      if ((mx - centre.x) * nx + (my - centre.y) * ny < 0) { nx = -nx; ny = -ny; }
+      x += nx * offset;
+      y += ny * offset;
+    }
+    return { x, y };
+  });
+}
+
+/** Point-in-quad test (quad ordered TL, TR, BR, BL). */
+function pointInQuad(point, quad) {
+  let sign = 0;
+  for (let i = 0; i < 4; i += 1) {
+    const a = quad[i];
+    const b = quad[(i + 1) % 4];
+    const cross = (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
+    if (Math.abs(cross) < 1e-9) continue;
+    const current = Math.sign(cross);
+    if (!sign) sign = current;
+    else if (sign !== current) return false;
+  }
+  return true;
+}
+
+/** Scales a quad around its centre. */
+function growQuad(quad, factor) {
+  const cx = (quad[0].x + quad[1].x + quad[2].x + quad[3].x) / 4;
+  const cy = (quad[0].y + quad[1].y + quad[2].y + quad[3].y) / 4;
+  return quad.map((point) => ({
+    x: cx + (point.x - cx) * factor,
+    y: cy + (point.y - cy) * factor,
+  }));
+}
+
+/** Four extreme corner points of a blob (works for rotated / perspective quads). */
+function extremeQuad(points) {
+  if (!points.length) return null;
   let tl = null; let tr = null; let br = null; let bl = null;
-  let tlScore = Infinity; let trScore = -Infinity; let brScore = -Infinity; let blScore = Infinity;
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      if (!blob[y * width + x]) continue;
-      count += 1;
+  let a = Infinity; let b = -Infinity; let c = -Infinity; let d = Infinity;
+  for (const point of points) {
+    const sum = point.x + point.y;
+    const diff = point.x - point.y;
+    if (sum < a) { a = sum; tl = point; }
+    if (diff > b) { b = diff; tr = point; }
+    if (sum > c) { c = sum; br = point; }
+    if (diff < d) { d = diff; bl = point; }
+  }
+  return [tl, tr, br, bl];
+}
+
+/**
+ * Scores a quad by how well its four edges sit on a real boundary:
+ * brightness/texture step across the edge plus gradient strength along it.
+ */
+function scoreQuadOnEdges(quad, { gray, gradient, gradientMean, width, height, points = [] }) {
+  if (!quad || quad.some((point) => !point || !Number.isFinite(point.x) || !Number.isFinite(point.y))) return null;
+  const area = Math.abs(quad.reduce((sum, point, index) => {
+    const next = quad[(index + 1) % 4];
+    return sum + point.x * next.y - next.x * point.y;
+  }, 0)) / 2;
+  const areaRatio = area / (width * height);
+  if (areaRatio < 0.02 || areaRatio > 0.96) return null;
+
+  const centre = {
+    x: (quad[0].x + quad[1].x + quad[2].x + quad[3].x) / 4,
+    y: (quad[0].y + quad[1].y + quad[2].y + quad[3].y) / 4,
+  };
+  const inGap = 0.05;
+  const outGap = 0.07;
+  const sample = (plane, x, y) => {
+    const ix = Math.round(x);
+    const iy = Math.round(y);
+    if (ix < 2 || iy < 2 || ix >= width - 2 || iy >= height - 2) return null;
+    return plane[iy * width + ix];
+  };
+  const steps = new Float64Array(4);
+  const inner = [];
+  const outer = [];
+  const grads = [];
+  for (let edge = 0; edge < 4; edge += 1) {
+    const a = quad[edge];
+    const b = quad[(edge + 1) % 4];
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    const samplesAlong = Math.max(6, Math.min(40, Math.round(length / 6)));
+    let innerSum = 0; let outerSum = 0; let innerCount = 0; let outerCount = 0; let gradSum = 0;
+    for (let s = 1; s < samplesAlong; s += 1) {
+      const t = s / samplesAlong;
+      const x = a.x + (b.x - a.x) * t;
+      const y = a.y + (b.y - a.y) * t;
+      const ix = sample(gray, x + (centre.x - x) * inGap, y + (centre.y - y) * inGap);
+      const ox = sample(gray, x - (centre.x - x) * outGap, y - (centre.y - y) * outGap);
+      const g = sample(gradient, x, y);
+      if (ix !== null) { innerSum += ix; innerCount += 1; }
+      if (ox !== null) { outerSum += ox; outerCount += 1; }
+      if (g !== null) gradSum += g;
+    }
+    if (!innerCount || !outerCount) return null;
+    const innerMean = innerSum / innerCount;
+    const outerMean = outerSum / outerCount;
+    inner.push(innerMean);
+    outer.push(outerMean);
+    grads.push(gradSum / Math.max(1, innerCount));
+    steps[edge] = Math.abs(innerMean - outerMean);
+  }
+  // a real document boundary shows a step on most edges, not just one
+  const sorted = [...steps].sort((a, b) => a - b);
+  const step = (sorted[1] + sorted[2]) / 2; // median of the four steps
+  const gradRatio = grads.reduce((a, b) => a + b, 0) / 4 / Math.max(1, gradientMean);
+  const brighter = inner.reduce((a, b) => a + b, 0) >= outer.reduce((a, b) => a + b, 0);
+
+  // how much of the detected region actually fills the quad: inflated quads score badly
+  let inside = 0;
+  for (const point of points) {
+    if (pointInQuad(point, quad)) inside += 1;
+  }
+  const fill = Math.min(1, inside / Math.max(1, area));
+
+  const total = step / 25 + Math.min(2, gradRatio) * 0.4 + (brighter ? 0.3 : 0) + fill * fill * 1.6;
+  return { step, gradRatio, total, areaRatio, fill };
+}
+
+/** Rotated minimum-area rectangle around a convex hull (rotating calipers). */
+function minAreaRect(hull) {
+  if (!hull || hull.length < 3) return null;
+  let best = null;
+  for (let i = 0; i < hull.length; i += 1) {
+    const a = hull[i];
+    const b = hull[(i + 1) % hull.length];
+    const angle = Math.atan2(b.y - a.y, b.x - a.x);
+    const cos = Math.cos(-angle);
+    const sin = Math.sin(-angle);
+    let minX = Infinity; let maxX = -Infinity; let minY = Infinity; let maxY = -Infinity;
+    for (const point of hull) {
+      const x = point.x * cos - point.y * sin;
+      const y = point.x * sin + point.y * cos;
       if (x < minX) minX = x;
       if (x > maxX) maxX = x;
       if (y < minY) minY = y;
       if (y > maxY) maxY = y;
-      if (x + y < tlScore) { tlScore = x + y; tl = { x, y }; }
-      if (x - y > trScore) { trScore = x - y; tr = { x, y }; }
-      if (x + y > brScore) { brScore = x + y; br = { x, y }; }
-      if (x - y < blScore) { blScore = x - y; bl = { x, y }; }
+    }
+    const area = (maxX - minX) * (maxY - minY);
+    if (!best || area < best.area) {
+      const back = (x, y) => ({
+        x: x * Math.cos(angle) - y * Math.sin(angle),
+        y: x * Math.sin(angle) + y * Math.cos(angle),
+      });
+      best = {
+        area,
+        corners: [back(minX, minY), back(maxX, minY), back(maxX, maxY), back(minX, maxY)],
+      };
     }
   }
-  const area = (maxX - minX + 1) * (maxY - minY + 1);
-  if (count < width * height * 0.12 || area < width * height * 0.1) return null;
-  if (!tl || !tr || !br || !bl) return null;
+  if (best) best.corners = orderQuad(best.corners);
+  return best;
+}
 
-  // the extreme points of a rotated rectangle sit slightly inside the real corners,
-  // so expand the quad by a few percent around its centre
-  const cx = (tl.x + tr.x + br.x + bl.x) / 4;
-  const cy = (tl.y + tr.y + br.y + bl.y) / 4;
-  const grow = 1.02;
-  const norm = [tl, tr, br, bl].map((point) => ({
-    x: Math.min(1, Math.max(0, (cx + (point.x - cx) * grow) / width)),
-    y: Math.min(1, Math.max(0, (cy + (point.y - cy) * grow) / height)),
-  }));
-  return norm;
+/** Convex hull (monotone chain). */
+function convexHull(points) {
+  if (points.length < 3) return points.slice();
+  const sorted = [...points].sort((a, b) => (a.x - b.x) || (a.y - b.y));
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower = [];
+  for (const point of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], point) <= 0) lower.pop();
+    lower.push(point);
+  }
+  const upper = [];
+  for (let i = sorted.length - 1; i >= 0; i -= 1) {
+    const point = sorted[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], point) <= 0) upper.pop();
+    upper.push(point);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
+/** Orders four points as TL, TR, BR, BL. */
+function orderQuad(points) {
+  const byY = [...points].sort((a, b) => a.y - b.y);
+  const top = byY.slice(0, 2).sort((a, b) => a.x - b.x);
+  const bottom = byY.slice(2).sort((a, b) => a.x - b.x);
+  return [top[0], top[1], bottom[1], bottom[0]];
+}
+
+function sobelPlane(plane, width, height) {
+  const out = new Float32Array(plane.length);
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const i = y * width + x;
+      const gx = (plane[i - width + 1] + 2 * plane[i + 1] + plane[i + width + 1])
+        - (plane[i - width - 1] + 2 * plane[i - 1] + plane[i + width - 1]);
+      const gy = (plane[i + width - 1] + 2 * plane[i + width] + plane[i + width + 1])
+        - (plane[i - width - 1] + 2 * plane[i - width] + plane[i - width + 1]);
+      out[i] = Math.hypot(gx, gy);
+    }
+  }
+  return out;
 }
 
 function otsu(plane) {
@@ -332,30 +628,30 @@ function boxBlurPlane(plane, width, height, radius) {
   return out;
 }
 
-/** Keeps only the biggest 4-connected blob of the mask (in place). */
-function keepLargestComponent(mask, width, height) {
+/** Returns the 4-connected blobs of a mask, biggest first. */
+function componentsOf(mask, width, height, minSize) {
   const seen = new Uint8Array(mask.length);
   const stack = new Int32Array(mask.length);
-  let bestStart = -1;
-  let bestSize = 0;
+  const blobs = [];
   for (let start = 0; start < mask.length; start += 1) {
     if (!mask[start] || seen[start]) continue;
     let top = 0;
     stack[top] = start;
     top += 1;
     seen[start] = 1;
-    let size = 0;
+    const pixels = [];
     while (top > 0) {
       top -= 1;
       const index = stack[top];
-      size += 1;
+      pixels.push(index);
       const x = index % width;
       const y = (index - x) / width;
-      const up = y > 0 ? index - width : -1;
-      const down = y < height - 1 ? index + width : -1;
-      const left = x > 0 ? index - 1 : -1;
-      const right = x < width - 1 ? index + 1 : -1;
-      const neighbours = [up, down, left, right];
+      const neighbours = [
+        y > 0 ? index - width : -1,
+        y < height - 1 ? index + width : -1,
+        x > 0 ? index - 1 : -1,
+        x < width - 1 ? index + 1 : -1,
+      ];
       for (let n = 0; n < 4; n += 1) {
         const next = neighbours[n];
         if (next >= 0 && mask[next] && !seen[next]) {
@@ -365,41 +661,10 @@ function keepLargestComponent(mask, width, height) {
         }
       }
     }
-    if (size > bestSize) {
-      bestSize = size;
-      bestStart = start;
-    }
+    if (pixels.length >= minSize) blobs.push(pixels);
   }
-  if (bestStart < 0) {
-    mask.fill(0);
-    return;
-  }
-  const out = new Uint8Array(mask.length);
-  let top = 0;
-  stack[top] = bestStart;
-  top += 1;
-  out[bestStart] = 1;
-  while (top > 0) {
-    top -= 1;
-    const index = stack[top];
-    const x = index % width;
-    const y = (index - x) / width;
-    const neighbours = [
-      y > 0 ? index - width : -1,
-      y < height - 1 ? index + width : -1,
-      x > 0 ? index - 1 : -1,
-      x < width - 1 ? index + 1 : -1,
-    ];
-    for (let n = 0; n < 4; n += 1) {
-      const next = neighbours[n];
-      if (next >= 0 && mask[next] && !out[next]) {
-        out[next] = 1;
-        stack[top] = next;
-        top += 1;
-      }
-    }
-  }
-  mask.set(out);
+  blobs.sort((a, b) => b.length - a.length);
+  return blobs;
 }
 
 function erode(mask, width, height) {
