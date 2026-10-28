@@ -154,7 +154,8 @@
       <div class="scanner-actions">
         <button class="ghost-btn" id="scanner-add" type="button">+ إضافة صور</button>
         <button class="primary-btn small" id="scanner-export-pdf" type="button" disabled>حفظ PDF</button>
-        <button class="ghost-btn" id="scanner-export-images" type="button" disabled>حفظ صور ZIP</button>
+        <button class="ghost-btn" id="scanner-export-images" type="button" disabled>حفظ الصور</button>
+        <button class="ghost-btn" id="scanner-export-zip" type="button" disabled title="كل الصور داخل ملف ZIP واحد">ZIP</button>
         <button class="icon-btn" id="scanner-close" type="button" aria-label="إغلاق">✕</button>
       </div>
     </header>
@@ -192,6 +193,18 @@
         </div>
 
         <div class="filters-strip" id="filters-strip"></div>
+
+        <section class="scan-files" id="scan-files" hidden>
+          <header class="scan-files-head">
+            <strong>الصور جاهزة — <span id="scan-files-count">0</span> صورة</strong>
+            <div class="scan-files-actions">
+              <button class="primary-btn small" id="scan-files-all" type="button">تحميل الكل</button>
+              <button class="ghost-btn small" id="scan-files-close" type="button">إغلاق</button>
+            </div>
+          </header>
+          <p class="scan-files-hint">اضغط «تحميل» على أي صورة لحفظها منفصلة، أو «تحميل الكل» لحفظها كلها في مجلد التنزيلات.</p>
+          <ul class="scan-files-list" id="scan-files-list"></ul>
+        </section>
         <p class="scanner-status" id="scanner-status" hidden></p>
         <p class="scanner-hint">اسحب الزوايا الأربع لتحديد حدود الورقة — سيُصحَّح الميل والمنظور تلقائياً عند الحفظ.</p>
       </section>

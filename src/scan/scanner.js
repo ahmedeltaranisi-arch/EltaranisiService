@@ -1,7 +1,7 @@
 // Scan workspace UI: add photos, drag the 4 corners, pick a filter, export PDF/images.
 import { FILTERS, applyFilter } from "./filters.js";
 import { defaultQuad, rotateCanvas, flipCanvas, detectQuad } from "./perspective.js";
-import { buildScanPdf, buildScanImages, renderPageCanvas } from "./export.js";
+import { buildScanPdf, buildScanImages, buildScanImageFiles, renderPageCanvas } from "./export.js";
 
 const PREVIEW_MAX = 1000; // preview canvas longest side
 const THUMB_MAX = 150;
@@ -76,6 +76,10 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
   const status = document.getElementById("scanner-status");
   const filterSelect = document.getElementById("scanner-filter-all");
   const cropFrame = document.getElementById("crop-frame");
+  const filesPanel = document.getElementById("scan-files");
+  const filesList = document.getElementById("scan-files-list");
+  const filesCount = document.getElementById("scan-files-count");
+  const filesUrls = []; // object URLs kept alive while the result panel is open
 
   const state = {
     pages: [],
@@ -198,7 +202,8 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     const hasPages = state.pages.length > 0;
     if (filtersStrip) filtersStrip.classList.toggle("empty", !hasPages);
     ["scanner-export-pdf", "scanner-export-images", "scanner-rotate-left", "scanner-rotate-right",
-      "scanner-flip", "scanner-crop-all", "scanner-detect", "scanner-page-delete"].forEach((id) => {
+      "scanner-flip", "scanner-crop-all", "scanner-detect", "scanner-page-delete",
+      "scanner-export-zip"].forEach((id) => {
       const node = document.getElementById(id);
       if (node) node.disabled = !hasPages;
     });
@@ -431,22 +436,98 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     }
   }
 
+  function openResultPanel(files) {
+    if (!filesPanel || !filesList) return;
+    clearResultPanel();
+    filesCount.textContent = String(files.length);
+    files.forEach((file) => {
+      const url = URL.createObjectURL(file.blob);
+      filesUrls.push(url);
+      const item = document.createElement("li");
+      item.className = "scan-file";
+      const thumb = document.createElement("img");
+      thumb.src = url;
+      thumb.alt = file.name;
+      const meta = document.createElement("div");
+      meta.className = "scan-file-meta";
+      const name = document.createElement("span");
+      name.className = "scan-file-name";
+      name.textContent = file.name;
+      const size = document.createElement("span");
+      size.className = "scan-file-size";
+      size.textContent = `${file.width}×${file.height} · ${(file.blob.size / 1024).toFixed(0)} كيلوبايت`;
+      meta.append(name, size);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.name;
+      link.textContent = "تحميل";
+      item.append(thumb, meta, link);
+      filesList.appendChild(item);
+    });
+    filesPanel.hidden = false;
+    filesPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function clearResultPanel() {
+    if (filesList) filesList.innerHTML = "";
+    while (filesUrls.length) URL.revokeObjectURL(filesUrls.pop());
+    if (filesPanel) filesPanel.hidden = true;
+  }
+
+  /** Saves every cropped page as its own JPG file (no ZIP). */
   async function exportImages() {
     if (!state.pages.length || state.busy) return;
     state.busy = true;
     setStatus("جارٍ تجهيز الصور…");
     try {
-      const blob = await buildScanImages(state.pages, {
+      const files = await buildScanImageFiles(state.pages, {
         format: "jpg",
         quality: 0.9,
         onProgress: (percent) => setStatus(`جارٍ تجهيز الصور… ${percent}%`),
+      });
+      setStatus("");
+      if (files.length === 1) {
+        download(files[0].blob, files[0].name);
+        onToast(`تم حفظ الصورة: ${files[0].name}`);
+        return;
+      }
+      openResultPanel(files);
+      onToast(`تم تجهيز ${files.length} صورة — اضغط «تحميل» أو «تحميل الكل»`);
+    } catch (error) {
+      setStatus("");
+      onToast(`تعذر تجهيز الصور: ${error.message}`);
+    } finally {
+      state.busy = false;
+    }
+  }
+
+  /** Triggers the download of every prepared page image, one after another. */
+  async function downloadAllFiles() {
+    if (!filesList) return;
+    const links = [...filesList.querySelectorAll("a[download]")];
+    for (let index = 0; index < links.length; index += 1) {
+      links[index].click();
+      await new Promise((resolve) => setTimeout(resolve, 450));
+    }
+    onToast(`جارٍ حفظ ${links.length} صورة في مجلد التنزيلات`);
+  }
+
+  async function exportZip() {
+    if (!state.pages.length || state.busy) return;
+    state.busy = true;
+    setStatus("جارٍ تجهيز ملف ZIP…");
+    try {
+      const blob = await buildScanImages(state.pages, {
+        format: "jpg",
+        quality: 0.9,
+        onProgress: (percent) => setStatus(`جارٍ تجهيز ZIP… ${percent}%`),
       });
       download(blob, `scan-images-${Date.now()}.zip`);
       setStatus("");
       onToast(`تم تجهيز ${state.pages.length} صورة داخل ملف ZIP`);
     } catch (error) {
       setStatus("");
-      onToast(`تعذر تجهيز الصور: ${error.message}`);
+      onToast(`تعذر تجهيز ZIP: ${error.message}`);
     } finally {
       state.busy = false;
     }
@@ -509,6 +590,11 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
   document.getElementById("scanner-page-delete").addEventListener("click", deletePage);
   document.getElementById("scanner-export-pdf").addEventListener("click", exportPdf);
   document.getElementById("scanner-export-images").addEventListener("click", exportImages);
+  document.getElementById("scanner-export-zip").addEventListener("click", exportZip);
+  const filesAll = document.getElementById("scan-files-all");
+  if (filesAll) filesAll.addEventListener("click", downloadAllFiles);
+  const filesClose = document.getElementById("scan-files-close");
+  if (filesClose) filesClose.addEventListener("click", clearResultPanel);
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !root.hidden) close();
   });
@@ -524,6 +610,9 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     previewActivePage,
     exportPdf,
     exportImages,
+    exportZip,
+    downloadAllFiles,
+    clearResultPanel,
     rotate,
     flip,
     cropAll,

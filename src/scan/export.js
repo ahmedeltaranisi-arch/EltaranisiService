@@ -49,6 +49,25 @@ export async function buildScanPdf(pages, { quality = 0.88, onProgress = () => {
   return new Blob([bytes], { type: "application/pdf" });
 }
 
+/** Builds the individual page images (one blob per page, no ZIP). */
+export async function buildScanImageFiles(pages, { format = "jpg", quality = 0.9, onProgress = () => {} } = {}) {
+  const type = format === "png" ? "image/png" : "image/jpeg";
+  const files = [];
+  for (let index = 0; index < pages.length; index += 1) {
+    const canvas = renderPageCanvas(pages[index]);
+    const blob = await toBlob(canvas, type, quality);
+    const number = String(index + 1).padStart(2, "0");
+    files.push({
+      name: `scan-${number}.${format === "png" ? "png" : "jpg"}`,
+      blob,
+      width: canvas.width,
+      height: canvas.height,
+    });
+    onProgress(Math.round(((index + 1) / pages.length) * 95));
+  }
+  return files;
+}
+
 /** Builds a ZIP of JPG/PNG pages. */
 export async function buildScanImages(pages, { format = "jpg", quality = 0.9, onProgress = () => {} } = {}) {
   const zip = new JSZip();

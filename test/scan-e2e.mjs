@@ -160,11 +160,37 @@ try {
     check("PDF is valid and contains 3 pages", isPdf && pages === 3, `${(buf.length / 1024).toFixed(0)} KB, ${pages} pages`);
   }
 
-  // export images ZIP
+  // save images as separate files (no ZIP)
   await page.evaluate(() => document.getElementById("scanner-export-images").click());
+  await page.waitForSelector("#scan-files:not([hidden])", { timeout: 40000 });
+  const panel = await page.evaluate(() => ({
+    count: document.getElementById("scan-files-count").textContent,
+    links: [...document.querySelectorAll("#scan-files-list a[download]")].map((link) => link.getAttribute("download")),
+    sizes: [...document.querySelectorAll(".scan-file-size")].map((node) => node.textContent),
+  }));
+  check("save-images panel lists every page separately", panel.links.length === 3
+    && panel.links.join(",") === "scan-01.jpg,scan-02.jpg,scan-03.jpg", panel.links.join(", "));
+  check("panel reports real dimensions and sizes", panel.sizes.every((text) => /\d+×\d+ · \d+ كيلوبايت/.test(text)), panel.sizes[0] || "");
+
+  await page.evaluate(() => document.getElementById("scan-files-all").click());
+  await new Promise((resolve) => setTimeout(resolve, 5000));
+  const jpgs = fs.readdirSync(OUT_DIR).filter((name) => /^scan-\d+\.jpg$/.test(name)).sort();
+  check("each page saved as its own JPG (no ZIP)", jpgs.length === 3, jpgs.join(", "));
+  if (jpgs.length) {
+    const sizes = jpgs.map((name) => fs.statSync(path.join(OUT_DIR, name)).size);
+    const headers = jpgs.map((name) => fs.readFileSync(path.join(OUT_DIR, name)).subarray(0, 3).toString("hex"));
+    check("saved JPGs are valid files with real content",
+      headers.every((header) => header === "ffd8ff") && sizes.every((size) => size > 15000),
+      `${sizes.map((size) => `${(size / 1024).toFixed(0)}KB`).join(" / ")}`);
+    const noZipYet = fs.readdirSync(OUT_DIR).every((name) => !name.endsWith(".zip"));
+    check("no ZIP archive produced by the images button", noZipYet);
+  }
+
+  // ZIP stays available as an explicit separate button
+  await page.evaluate(() => document.getElementById("scanner-export-zip").click());
   await new Promise((resolve) => setTimeout(resolve, 9000));
   const zipFile = fs.readdirSync(OUT_DIR).find((name) => name.endsWith(".zip"));
-  check("images ZIP export produced a real file", Boolean(zipFile));
+  check("optional ZIP button still works", Boolean(zipFile));
   if (zipFile) {
     const buf = fs.readFileSync(path.join(OUT_DIR, zipFile));
     const entries = (buf.toString("latin1").match(/scan-\d+\.jpg/g) || []);
