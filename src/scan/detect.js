@@ -114,10 +114,55 @@ function otsu(plane) {
   return (best / scale);
 }
 
+
+/** Integral-image box blur (used for background estimation). */
+function boxBlur(plane, width, height, radius) {
+  const integral = new Float64Array((width + 1) * (height + 1));
+  for (let y = 0; y < height; y += 1) {
+    let rowSum = 0;
+    for (let x = 0; x < width; x += 1) {
+      rowSum += plane[y * width + x];
+      integral[(y + 1) * (width + 1) + (x + 1)] = integral[y * (width + 1) + (x + 1)] + rowSum;
+    }
+  }
+  const out = new Float32Array(plane.length);
+  for (let y = 0; y < height; y += 1) {
+    const y0 = Math.max(0, y - radius);
+    const y1 = Math.min(height - 1, y + radius);
+    for (let x = 0; x < width; x += 1) {
+      const x0 = Math.max(0, x - radius);
+      const x1 = Math.min(width - 1, x + radius);
+      const sum = integral[(y1 + 1) * (width + 1) + (x1 + 1)]
+        - integral[y0 * (width + 1) + (x1 + 1)]
+        - integral[(y1 + 1) * (width + 1) + x0]
+        + integral[y0 * (width + 1) + x0];
+      out[y * width + x] = sum / ((x1 - x0 + 1) * (y1 - y0 + 1));
+    }
+  }
+  return out;
+}
+
+/**
+ * Thin-structure edge map (difference of gaussians). A printed dashed border on a
+ * sheet of paper sitting on a bright desk is sub-pixel at 400 px and dies inside
+ * Canny's hysteresis; subtracting a wide background estimate keeps those thin dark
+ * strokes alive while removing the illumination gradient.
+ */
+export function ridgeEdges(gray, width, height, { radiusScale = 0.03, levelScale = 0.85 } = {}) {
+  const radius = Math.max(4, Math.round(Math.min(width, height) * radiusScale));
+  const background = boxBlur(gray, width, height, radius);
+  const dog = new Float32Array(gray.length);
+  for (let i = 0; i < gray.length; i += 1) dog[i] = Math.abs(gray[i] - background[i]);
+  const level = Math.max(6, otsu(dog) * levelScale);
+  const edges = new Uint8Array(gray.length);
+  for (let i = 0; i < dog.length; i += 1) edges[i] = dog[i] >= level ? 1 : 0;
+  return edges;
+}
+
 /* --------------------------------- Canny ---------------------------------- */
 
 /** Canny edge map: non-max suppression + hysteresis. */
-export function cannyEdges(mag, dir, width, height) {
+export function cannyEdges(mag, dir, width, height, { highScale = 1 } = {}) {
   const suppressed = new Float32Array(mag.length);
   for (let y = 1; y < height - 1; y += 1) {
     for (let x = 1; x < width - 1; x += 1) {
@@ -134,7 +179,7 @@ export function cannyEdges(mag, dir, width, height) {
       if (value >= a && value >= b) suppressed[i] = value;
     }
   }
-  const high = Math.max(12, otsu(suppressed) * 1.15);
+  const high = Math.max(12 * highScale, otsu(suppressed) * 1.15 * highScale);
   const low = high * 0.42;
   const edges = new Uint8Array(mag.length);
   const stack = new Int32Array(mag.length);
@@ -202,13 +247,75 @@ export function distanceToEdges(edges, width, height) {
   return dist;
 }
 
+
+/**
+ * Sensitive edge map for low-contrast scenes (white paper on a white desk).
+ * The threshold is a small multiple of the median non-maximum gradient instead of
+ * Otsu, and only *long* connected components survive, so speckle noise and glyphs
+ * drop out while a soft paper border stays.
+ */
+export function sensitiveEdges(mag, dir, width, height, { factor = 0.4, minRun = 20 } = {}) {
+  const suppressed = new Float32Array(mag.length);
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const i = y * width + x;
+      const value = mag[i];
+      if (value <= 0) continue;
+      const angle = ((dir[i] * 180) / Math.PI + 180) % 180;
+      let a;
+      let b;
+      if (angle < 22.5 || angle >= 157.5) { a = mag[i - 1]; b = mag[i + 1]; }
+      else if (angle < 67.5) { a = mag[i - width - 1]; b = mag[i + width + 1]; }
+      else if (angle < 112.5) { a = mag[i - width]; b = mag[i + width]; }
+      else { a = mag[i - width + 1]; b = mag[i + width - 1]; }
+      if (value >= a && value >= b) suppressed[i] = value;
+    }
+  }
+  const values = [];
+  for (let i = 0; i < suppressed.length; i += 1) if (suppressed[i] > 0) values.push(suppressed[i]);
+  values.sort((a, b) => a - b);
+  const median = values.length ? values[Math.floor(values.length / 2)] : 1;
+  const level = Math.max(6, median * factor);
+  const raw = new Uint8Array(mag.length);
+  for (let i = 0; i < suppressed.length; i += 1) raw[i] = suppressed[i] >= level ? 1 : 0;
+
+  const edges = new Uint8Array(mag.length);
+  const seen = new Uint8Array(mag.length);
+  const stack = new Int32Array(mag.length);
+  for (let start = 0; start < raw.length; start += 1) {
+    if (!raw[start] || seen[start]) continue;
+    let top = 0;
+    stack[top++] = start;
+    seen[start] = 1;
+    const members = [];
+    while (top > 0) {
+      const index = stack[--top];
+      members.push(index);
+      const x = index % width;
+      const y = (index - x) / width;
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) {
+          if (!dx && !dy) continue;
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          const next = ny * width + nx;
+          if (raw[next] && !seen[next]) { seen[next] = 1; stack[top++] = next; }
+        }
+      }
+    }
+    if (members.length >= minRun) for (const index of members) edges[index] = 1;
+  }
+  return edges;
+}
+
 /* --------------------------------- Hough ---------------------------------- */
 
 /**
  * Hough transform over (rho, theta); returns the strongest distinct lines.
  * A line is stored as x·cosθ + y·sinθ = rho.
  */
-export function houghLines(edges, width, height, { maxLines = 16, thetaSteps = 180 } = {}) {
+export function houghLines(edges, width, height, { maxLines = 16, thetaSteps = 180, minVotesFraction = 0.12 } = {}) {
   const diag = Math.ceil(Math.hypot(width, height));
   const rhoOffset = diag;
   const rhoBins = diag * 2 + 2;
@@ -234,7 +341,7 @@ export function houghLines(edges, width, height, { maxLines = 16, thetaSteps = 1
   if (!points.length) return { lines: [], points };
 
   const lines = [];
-  const minVotes = Math.max(12, Math.round(Math.min(width, height) * 0.12));
+  const minVotes = Math.max(8, Math.round(Math.min(width, height) * minVotesFraction));
   const scratch = new Uint32Array(accumulator.length);
   scratch.set(accumulator);
   for (let n = 0; n < maxLines * 4 && lines.length < maxLines; n += 1) {
@@ -385,7 +492,12 @@ export function buildQuads(lines, width, height, { maxPerGroup = 7 } = {}) {
             quad[(k + 1) % 4].y - quad[k].y,
           ));
           if (Math.min(...sides) < diagonal * 0.12) continue;
-          quads.push({ quad, areaRatio, lines: [hs[a], hs[b], vs[c], vs[d]] });
+          quads.push({
+            quad,
+            areaRatio,
+            votes: hs[a].votes + hs[b].votes + vs[c].votes + vs[d].votes,
+            lines: [hs[a], hs[b], vs[c], vs[d]],
+          });
         }
       }
     }
@@ -546,73 +658,106 @@ export function growQuad(quad, factor) {
  * (the blue/red strips on ID cards). Stops at the first dull band.
  */
 export function extendOverColours(quad, { saturation, value, width, height, allowed = null }) {
+  const ordered = orderQuad(quad);
   const centre = {
-    x: (quad[0].x + quad[1].x + quad[2].x + quad[3].x) / 4,
-    y: (quad[0].y + quad[1].y + quad[2].y + quad[3].y) / 4,
+    x: (ordered[0].x + ordered[1].x + ordered[2].x + ordered[3].x) / 4,
+    y: (ordered[0].y + ordered[1].y + ordered[2].y + ordered[3].y) / 4,
   };
-  // a "strip" pixel is vivid, bright AND locally uniform: cloth/gravel speckle is not
-  const coloured = (x, y) => {
+  const pixel = (x, y) => {
     const ix = Math.round(x);
     const iy = Math.round(y);
-    if (ix < 1 || iy < 1 || ix >= width - 1 || iy >= height - 1) return false;
+    if (ix < 2 || iy < 2 || ix >= width - 2 || iy >= height - 2) return null;
     const index = iy * width + ix;
-    if (value[index] < 150 || saturation[index] >= 0 && saturation[index] < 0.55) return false;
-    return true;
+    if (allowed && !allowed[index]) return null;
+    let sum = 0;
+    let sumSq = 0;
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const v = value[(iy + dy) * width + ix + dx];
+        sum += v;
+        sumSq += v * v;
+      }
+    }
+    const mean = sum / 9;
+    return {
+      sat: saturation[index],
+      val: value[index],
+      flat: Math.sqrt(Math.max(0, sumSq / 9 - mean * mean)) <= 18,
+    };
   };
+  // a printed band is vivid and flat *relative to the paper next to it*, which keeps
+  // the test working inside a shadow (absolute brightness varies far too much)
+  const isBand = (sample, paper) => {
+    if (!sample || sampled_isBoxed(sample)) return false;
+    const ratio = paper ? sample.val / paper : 1;
+    return sample.sat >= 0.45 && sample.flat && sample.val >= 90 && ratio >= 0.82 && ratio <= 1.35;
+  };
+  const sampled_isBoxed = () => false;
+
   const offsets = [0, 0, 0, 0];
   for (let side = 0; side < 4; side += 1) {
-    const a = quad[side];
-    const b = quad[(side + 1) % 4];
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const length = Math.hypot(dx, dy) || 1;
-    let nx = dy / length;
-    let ny = -dx / length;
+    const a = ordered[side];
+    const b = ordered[(side + 1) % 4];
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    if (length < 8) continue;
+    const dx = (b.x - a.x) / length;
+    const dy = (b.y - a.y) / length;
+    let nx = dy;
+    let ny = -dx;
     const mx = (a.x + b.x) / 2;
     const my = (a.y + b.y) / 2;
     if ((mx - centre.x) * nx + (my - centre.y) * ny < 0) { nx = -nx; ny = -ny; }
-    const maxDistance = Math.round(length * 0.3);
-    // the strip has to start immediately outside the quad: skip 1 px of anti-aliasing only
-    const adjacent = (d) => {
+    const maxDistance = Math.round(length * 0.32);
+    const refs = [];
+    for (let k = 1; k <= 15; k += 1) {
+      const t = k / 16;
+      const inner = pixel(a.x + dx * t * length - nx * 7, a.y + dy * t * length - ny * 7);
+      refs.push(inner ? inner.val : null);
+    }
+    const rowHits = (d) => {
       let hits = 0;
       for (let k = 1; k <= 15; k += 1) {
-        if (coloured(a.x + dx * (k / 16) + nx * d, a.y + dy * (k / 16) + ny * d)) hits += 1;
+        const t = k / 16;
+        const sample = pixel(a.x + dx * t * length + nx * d, a.y + dy * t * length + ny * d);
+        if (isBand(sample, refs[k - 1])) hits += 1;
       }
-      return hits >= 11;
+      return hits;
     };
-    let reached = 0;
-    let gap = 0;
-    for (let d = 2; d <= maxDistance; d += 1) {
-      if (adjacent(d)) { reached = d; gap = 0; } else { gap += 1; if (gap > 1) break; }
+    let start = 0;
+    for (let d = 3; d <= 7; d += 1) {
+      if (rowHits(d) >= 9) { start = d; break; }
     }
-    if (reached > 0 && !adjacent(2)) reached = 0; // a dull band means we are not on a strip
+    if (!start) continue;
+    let reached = start;
+    let gap = 0;
+    for (let d = start + 1; d <= maxDistance; d += 1) {
+      if (rowHits(d) >= 9) { reached = d; gap = 0; } else { gap += 1; if (gap > 1) break; }
+    }
+    if (reached >= maxDistance) continue; // strip keeps going: it is the background
     offsets[side] = reached;
   }
-  if (!offsets.some((offset) => offset > 0)) return quad;
-  return quad.map((point, index) => {
-    let x = point.x;
-    let y = point.y;
-    for (const side of [(index + 3) % 4, index]) {
-      const offset = offsets[side];
-      if (!offset) continue;
-      const a = quad[side];
-      const b = quad[(side + 1) % 4];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const length = Math.hypot(dx, dy) || 1;
-      let nx = dy / length;
-      let ny = -dx / length;
-      const mx = (a.x + b.x) / 2;
-      const my = (a.y + b.y) / 2;
-      if ((mx - centre.x) * nx + (my - centre.y) * ny < 0) { nx = -nx; ny = -ny; }
-      x += nx * offset;
-      y += ny * offset;
-    }
-    return { x, y };
-  });
+  if (!offsets.some(Boolean)) return quad;
+  const moved = ordered.map((point) => ({ ...point }));
+  for (let side = 0; side < 4; side += 1) {
+    const offset = offsets[side];
+    if (!offset) continue;
+    const a = ordered[side];
+    const b = ordered[(side + 1) % 4];
+    const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    let nx = (b.y - a.y) / length;
+    let ny = -(b.x - a.x) / length;
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    if ((mx - centre.x) * nx + (my - centre.y) * ny < 0) { nx = -nx; ny = -ny; }
+    moved[side] = { x: moved[side].x + nx * offset, y: moved[side].y + ny * offset };
+    moved[(side + 1) % 4] = {
+      x: moved[(side + 1) % 4].x + nx * offset,
+      y: moved[(side + 1) % 4].y + ny * offset,
+    };
+  }
+  return orderQuad(moved);
 }
 
-/** Point-in-quad test (quad ordered TL, TR, BR, BL). */
 export function pointInQuad(point, quad) {
   let sign = 0;
   for (let i = 0; i < 4; i += 1) {
@@ -1000,6 +1145,75 @@ export function refineQuad(quad, { edges, width, height, radius = 4 }) {
   return orderQuad(refined);
 }
 
+
+/** Separable binary morphology (dilate when `grow`, erode otherwise). */
+function morph(mask, width, height, radius, grow) {
+  const temp = new Uint8Array(mask.length);
+  const out = new Uint8Array(mask.length);
+  const want = grow ? 1 : 0;
+  for (let y = 0; y < height; y += 1) {
+    const row = y * width;
+    for (let x = 0; x < width; x += 1) {
+      let value = grow ? 0 : 1;
+      for (let k = -radius; k <= radius; k += 1) {
+        const xx = x + k < 0 ? 0 : x + k >= width ? width - 1 : x + k;
+        const m = mask[row + xx];
+        if (grow ? m > value : m < value) value = m;
+      }
+      temp[row + x] = value === want ? want : temp[row + x] || value;
+      temp[row + x] = value;
+    }
+  }
+  for (let x = 0; x < width; x += 1) {
+    for (let y = 0; y < height; y += 1) {
+      let value = grow ? 0 : 1;
+      for (let k = -radius; k <= radius; k += 1) {
+        const yy = y + k < 0 ? 0 : y + k >= height ? height - 1 : y + k;
+        const m = temp[yy * width + x];
+        if (grow ? m > value : m < value) value = m;
+      }
+      out[y * width + x] = value;
+    }
+  }
+  return out;
+}
+
+/** Percentile of a plane (0..1). */
+function percentile(plane, q) {
+  const values = Float32Array.from(plane).sort();
+  return values[Math.min(values.length - 1, Math.max(0, Math.floor(values.length * q)))];
+}
+
+/**
+ * Paper-region quads from a bright-region mask. On a white desk the sheet is only a
+ * few levels brighter than the background, so the threshold is anchored to the top
+ * percentile instead of Otsu, and a closing pass bridges the text lines that would
+ * otherwise cut the region into strips.
+ */
+export function paperMaskQuads(gray, width, height, { deltas = [8, 14, 22], radius = 5 } = {}) {
+  const peak = percentile(gray, 0.99);
+  const minimum = Math.max(40, Math.round(width * height * 0.012));
+  const out = [];
+  for (const delta of deltas) {
+    const level = peak - delta;
+    const mask = new Uint8Array(gray.length);
+    for (let i = 0; i < gray.length; i += 1) mask[i] = gray[i] >= level ? 1 : 0;
+    const closed = morph(morph(mask, width, height, radius, true), width, height, radius, false);
+    const blobs = componentsOf(closed, width, height, minimum);
+    for (const blob of blobs.slice(0, 2)) {
+      const points = blob.map((index) => ({ x: index % width, y: (index - (index % width)) / width }));
+      const rect = minAreaRect(convexHull(points));
+      if (rect) {
+        out.push({ quad: rect.corners, source: "paper-rect" });
+        out.push({ quad: growQuad(rect.corners, 1.02), source: "paper-rect2" });
+      }
+      const extremes = extremeQuad(points);
+      if (extremes) out.push({ quad: extremes, source: "paper-extremes" });
+    }
+  }
+  return out;
+}
+
 /* -------------------------------- pipeline -------------------------------- */
 
 /**
@@ -1009,7 +1223,8 @@ export function refineQuad(quad, { edges, width, height, radius = 4 }) {
 export function detectDocumentQuad(sourceCanvas, { maxSide = 400, keepDebug = false, normalize = true } = {}) {
   const sampled = sampleImage(sourceCanvas, maxSide);
   const { width, height, saturation, value } = sampled;
-  let gray = sampled.gray;
+  const rawGray = sampled.gray;
+  let gray = rawGray;
   if (normalize) gray = normalizedGray(gray, width, height);
 
   const blurred = gaussian(gray, width, height);
@@ -1047,9 +1262,12 @@ export function detectDocumentQuad(sourceCanvas, { maxSide = 400, keepDebug = fa
   };
   addBlobQuads(blobA, "bright");
   addBlobQuads(blobB, "smooth");
+  for (const candidate of paperMaskQuads(rawGray, width, height)) {
+    candidates.push({ quad: extendOverColours(orderQuad(candidate.quad), colourOptions), source: candidate.source });
+  }
 
   const { lines } = houghLines(edges, width, height, { maxLines: 12, thetaSteps: 120 });
-  const houghQuads = buildQuads(lines, width, height, { maxPerGroup: 6 }).slice(0, 40);
+  const houghQuads = buildQuads(lines, width, height, { maxPerGroup: 6 }).slice(0, 120);
   houghQuads.forEach((item) => candidates.push({ quad: item.quad, source: "hough" }));
 
   const ctx = { gray, dist, width, height, blobA, maskA };
@@ -1057,19 +1275,48 @@ export function detectDocumentQuad(sourceCanvas, { maxSide = 400, keepDebug = fa
   const scoreOf = (quad) => {
     const features = quadFeatures(quad, ctx);
     if (!features) return null;
-    return 0.5 * features.edgeFit + 0.5 * features.stepFrac + 0.4 * features.coverA + 0.3 * features.rectangularity;
+    return 0.5 * features.edgeFit + 0.5 * features.stepFrac + 0.5 * features.overlapA + 0.3 * features.rectangularity;
   };
-  let best = null;
   const dump = globalThis.__DETECT_DUMP__;
-  for (const candidate of candidates) {
-    const total = scoreOf(candidate.quad);
-    if (dump) dump.push({ source: candidate.source, total });
-    if (total === null) continue;
-    if (!best || total > best.total) best = { ...candidate, total };
+  const bestOf = (list) => {
+    let winner = null;
+    for (const candidate of list) {
+      const total = scoreOf(candidate.quad);
+      if (dump) dump.push({ source: candidate.source, total, quad: candidate.quad.map((point) => ({ x: +point.x.toFixed(1), y: +point.y.toFixed(1) })) });
+      if (total === null) continue;
+      if (!winner || total > winner.total) winner = { ...candidate, total };
+    }
+    return winner;
+  };
+  let best = bestOf(candidates);
+
+  // ---- low-contrast rescue pass -------------------------------------------------
+  // White paper on a white desk produces almost no Canny response at the default
+  // thresholds, so a second, far more sensitive edge map is generated and every
+  // candidate (old and new) is re-scored against it. Only runs when the first pass
+  // is not already decisive, which keeps normal photos fast.
+  if (!best || best.total < 0.95) {
+    const lowEdges = sensitiveEdges(mag, dir, width, height);
+    const lowDist = distanceToEdges(lowEdges, width, height);
+    const lowLines = houghLines(lowEdges, width, height, {
+      maxLines: 16, thetaSteps: 120, minVotesFraction: 0.05,
+    }).lines;
+    const lowQuads = buildQuads(lowLines, width, height, { maxPerGroup: 8 }).slice(0, 200);
+    lowQuads.forEach((item) => candidates.push({ quad: item.quad, source: "lowcontrast" }));
+    const primaryDist = ctx.dist;
+    ctx.dist = lowDist;
+    const alt = bestOf(candidates);
+    if (alt && (!best || alt.total > best.total + 0.05)) {
+      best = alt;
+      lines.push(...lowLines);
+    } else {
+      ctx.dist = primaryDist;
+    }
   }
+
   // local border optimisation (fixes single-side errors such as shadow edges)
   if (best) {
-    const optimised = optimiseSides(best.quad, ctx);
+    const optimised = optimiseSides(best.quad, ctx, { maxShiftFraction: 0.14, rounds: 3 });
     const total = scoreOf(optimised);
     if (total !== null && total > best.total + 0.01) {
       best = { quad: optimised, source: `${best.source}+optim`, total };
@@ -1093,15 +1340,27 @@ export function detectDocumentQuad(sourceCanvas, { maxSide = 400, keepDebug = fa
     // backgrounds) and one unrestricted (needed when the strip touches texture).
     const extended = extendOverColours(best.quad, colourOptions);
     if (extended !== best.quad) {
+      // a bright, vivid, flat strip glued to the border that ends before the
+      // background is unambiguous geometric evidence — the edge score cannot see it
       const total = scoreOf(extended);
-      if (total !== null && total > best.total - 0.03) {
-        best = { quad: extended, source: `${best.source}+colour`, total };
-      }
+      best = { quad: extended, source: `${best.source}+colour`, total: total ?? best.total };
     }
   }
 
   if (globalThis.__DETECT_DUMP__) globalThis.__DETECT_DUMP__.push({ final: best?.source, total: best?.total, gate: 0.55 });
   const debug = keepDebug ? { lines: lines.length, candidates: candidates.length, best: best?.source, features: best?.features } : null;
+  // plausibility: a paper, a card and a receipt all sit between 1:1 and 4.6:1 in a
+  // photo. A long thin strip is UI chrome or a shelf edge, so the tool should say
+  // "I could not find the document" instead of cropping a random band.
+  const bestSides = [0, 1, 2, 3].map((k) => {
+    const a = best.quad[k];
+    const b = best.quad[(k + 1) % 4];
+    return Math.hypot(b.x - a.x, b.y - a.y);
+  });
+  const aspect = Math.max(...bestSides) / Math.max(1, Math.min(...bestSides));
+  if (best && aspect > 4.6) {
+    return { quad: null, confidence: 0, source: `${best.source}+aspect`, debug };
+  }
   if (!best || best.total < 0.55) return { quad: null, confidence: best ? best.total / 1.7 : 0, source: best?.source || null, debug };
 
   // refine the winner on a higher-resolution edge map (sub-pixel corners, perspective)
@@ -1119,14 +1378,26 @@ export function detectDocumentQuad(sourceCanvas, { maxSide = 400, keepDebug = fa
   const refinedArea = quadArea(refined);
   const originalArea = quadArea(scaled);
   const changed = Math.abs(refinedArea - originalArea) / Math.max(1, originalArea);
-  if (Number.isFinite(refinedArea) && changed < 0.2) {
+  if (Number.isFinite(refinedArea) && changed < 0.28) {
     quad = refined.map((point) => ({ x: point.x / fine.width, y: point.y / fine.height }));
   }
 
-  const normalized = quad.map((point) => ({
+  let normalized = quad.map((point) => ({
     x: clamp(point.x, 0, 1),
     y: clamp(point.y, 0, 1),
   }));
+  // the 720 px refinement can pull a side back onto the white/band boundary, so the
+  // colour-band completion runs once more on the final quad
+  const finalExtended = extendOverColours(
+    orderQuad(normalized.map((point) => ({ x: point.x * width, y: point.y * height }))),
+    colourOptions,
+  );
+  if (finalExtended) {
+    normalized = finalExtended.map((point) => ({
+      x: clamp(point.x / width, 0, 1),
+      y: clamp(point.y / height, 0, 1),
+    }));
+  }
   return {
     quad: orderQuad(normalized),
     confidence: Math.min(1, best.total / 1.7),
@@ -1136,7 +1407,7 @@ export function detectDocumentQuad(sourceCanvas, { maxSide = 400, keepDebug = fa
 }
 
 /** Illumination-flattened gray plane (shadow gradients removed before thresholding). */
-function normalizedGray(gray, width, height) {
+export function normalizedGray(gray, width, height) {
   const radius = Math.max(18, Math.round(Math.max(width, height) / 9));
   const light = gaussianRadius(gray, width, height, radius);
   const sortedLight = Float32Array.from(light).sort();
@@ -1182,7 +1453,15 @@ export function quadFeatures(quad, ctx) {
   const { gray, dist, width, height, blobA, maskA } = ctx;
   if (!quad || quad.some((point) => !point || !Number.isFinite(point.x) || !Number.isFinite(point.y))) return null;
   const area = quadArea(quad) / (width * height);
-  if (area < 0.02 || area > 1.02) return null;
+  if (area < 0.04 || area > 1.02) return null;
+  // a scanned document always spans a real part of the frame: reject slivers that
+  // come from noise (a screenshot with no paper in it must return null, not a sliver)
+  const diagonal = Math.hypot(width, height);
+  const sides = [0, 1, 2, 3].map((k) => {
+    const next = quad[(k + 1) % 4];
+    return Math.hypot(next.x - quad[k].x, next.y - quad[k].y);
+  });
+  if (Math.min(...sides) < diagonal * 0.1) return null;
   const centre = {
     x: (quad[0].x + quad[1].x + quad[2].x + quad[3].x) / 4,
     y: (quad[0].y + quad[1].y + quad[2].y + quad[3].y) / 4,
@@ -1235,14 +1514,39 @@ export function quadFeatures(quad, ctx) {
   };
   const rect = minAreaRect(convexHull(quad));
   const rectangularity = rect ? Math.min(1, quadArea(quad) / rect.area) : 1;
-  void maskA;
+  // symmetric overlap between the bright blob and the quad: a quad that merely sits
+  // *inside* the paper (a text band) is punished by the recall term
+  const precision = coverage(blobA);
+  let inside = 0;
+  let total = 0;
+  if (maskA) {
+    const bbox = quad.reduce((acc, point) => ({
+      minX: Math.min(acc.minX, point.x), maxX: Math.max(acc.maxX, point.x),
+      minY: Math.min(acc.minY, point.y), maxY: Math.max(acc.maxY, point.y),
+    }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
+    const stepX = Math.max(1, Math.round((bbox.maxX - bbox.minX) / 9));
+    const stepY = Math.max(1, Math.round((bbox.maxY - bbox.minY) / 9));
+    for (let y = Math.ceil(bbox.minY); y < bbox.maxY; y += stepY) {
+      for (let x = Math.ceil(bbox.minX); x < bbox.maxX; x += stepX) {
+        if (!pointInQuad({ x, y }, quad)) continue;
+        const ix = Math.round(x);
+        const iy = Math.round(y);
+        if (ix < 0 || iy < 0 || ix >= width || iy >= height) continue;
+        total += 1;
+        if (maskA[iy * width + ix]) inside += 1;
+      }
+    }
+  }
+  const recall = total ? inside / total : 0;
+  const overlapA = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
   return {
     edgeFit: edgeCount ? edgeSum / edgeCount : 0,
     stepFrac: stepCount ? stepHits / stepCount : 0,
-    coverA: coverage(blobA),
+    coverA: precision,
+    overlapA,
     rectangularity,
     area,
   };
 }
 
-export { gaussian, gradients };
+export { gaussian, gradients, otsu };

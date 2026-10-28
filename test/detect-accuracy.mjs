@@ -101,7 +101,7 @@ fs.writeFileSync(path.join(OUT, "accuracy-report.json"), JSON.stringify({
   accurate: good.length, total: all.length, avgIou: +avgIou.toFixed(3), avgError: +avgError.toFixed(1), avgMs: +avgMs.toFixed(0), rows: all,
 }, null, 2));
 
-const required = Number(process.env.MIN_ACCURATE || 20);
+const required = Number(process.env.MIN_ACCURATE || 22);
 if (good.length < required) {
   console.log(`ACCURACY FAIL: ${good.length} < ${required}`);
   process.exit(1);

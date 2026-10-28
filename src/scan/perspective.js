@@ -229,9 +229,21 @@ export function detectQuad(canvas) {
   return result.quad || null;
 }
 
-/** Same as detectQuad but keeps the confidence + diagnostic info (used by the UI). */
+/**
+ * Same as detectQuad but keeps the confidence + diagnostic info (used by the UI).
+ * When the first pass is not confident the photo is re-analysed at a higher
+ * resolution — small documents (cards, receipts) and low-contrast scenes often need
+ * more pixels before the border lines survive Hough.
+ */
 export function detectQuadDetailed(canvas) {
-  return detectDocumentQuad(canvas);
+  const result = detectDocumentQuad(canvas);
+  if (result.quad && result.confidence >= 0.62) return result;
+  const retry = detectDocumentQuad(canvas, { maxSide: 640 });
+  if (!retry.quad) return result;
+  if (!result.quad || retry.confidence > result.confidence + 0.02) {
+    return { ...retry, source: `${retry.source}+hi` };
+  }
+  return result;
 }
 
 // legacy (unused) geometry helpers were removed in favour of detect.js

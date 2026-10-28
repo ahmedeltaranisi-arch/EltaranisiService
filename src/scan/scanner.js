@@ -475,20 +475,6 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     updateCaption();
   }
 
-  function updateCaption() {
-    if (!caption) return;
-    const page = activePage();
-    if (!page) {
-      caption.innerHTML = "";
-      return;
-    }
-    const filter = FILTERS.find((item) => item.id === (page.filter || "original"));
-    const index = state.pages.findIndex((item) => item.id === page.id) + 1;
-    caption.innerHTML = `<span>صفحة ${index} من ${state.pages.length} · ${page.canvas.width}×${page.canvas.height}</span>`
-      + `<span>${filter ? filter.label : "Original"} — ${filter ? filter.arabic : "الأصلية"}`
-      + `${page.autoDetected === false ? " · قص يدوي" : ` · اكتشاف تلقائي ${Math.round((page.confidence || 0) * 100)}%`}</span>`;
-  }
-
   function drawOverlay() {
     const page = activePage();
     if (!page) return;
@@ -943,7 +929,10 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     const index = state.pages.findIndex((item) => item.id === page.id) + 1;
     caption.innerHTML = `<span>صفحة ${index} من ${state.pages.length} · ${page.canvas.width}×${page.canvas.height}</span>`
       + `<span>${filter ? filter.label : "Original"} — ${filter ? filter.arabic : "الأصلية"}`
-      + `${page.autoDetected === false ? " · قص يدوي" : ` · اكتشاف تلقائي ${Math.round((page.confidence || 0) * 100)}%`}</span>`;
+      + (page.autoDetected === false
+        ? " · قص يدوي"
+        : ` · اكتشاف تلقائي ${Math.round((page.confidence || 0) * 100)}%${(page.confidence || 0) < 0.6 ? " ⚠ راجع الزوايا" : ""}`)
+      + "</span>";
   }
 
   return {
