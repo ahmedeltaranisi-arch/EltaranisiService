@@ -53,6 +53,7 @@
           <button class="chip" data-route="pdf:to-pptx">PDF ← PowerPoint</button>
           <button class="chip" data-route="pdf:to-jpg">PDF ← JPG</button>
           <button class="chip" data-route="img:to-pdf">JPG ← PDF</button>
+          <button class="chip" data-route="scan:images">مسح ضوئي + فلاتر</button>
           <button class="chip" data-route="pdf:merge">دمج ملفات</button>
           <button class="chip" data-route="pdf:compress">ضغط</button>
         </div>
@@ -137,6 +138,68 @@
       </div>
     </div>
   </div>
+
+  <!-- ===================== Scan workspace (crop + filters) ===================== -->
+  <div class="scanner" id="scanner" hidden>
+    <header class="scanner-head">
+      <div class="scanner-title">
+        <span class="scanner-ico" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M20 8V6a2 2 0 0 0-2-2h-2M4 16v2a2 2 0 0 0 2 2h2M20 16v2a2 2 0 0 1-2 2h-2"/><path d="M4 12h16"/></svg>
+        </span>
+        <div>
+          <strong>مسح المستندات ضوئياً</strong>
+          <span class="muted" id="scanner-count">0 صفحة</span>
+        </div>
+      </div>
+      <div class="scanner-actions">
+        <button class="ghost-btn" id="scanner-add" type="button">+ إضافة صور</button>
+        <button class="primary-btn small" id="scanner-export-pdf" type="button" disabled>حفظ PDF</button>
+        <button class="ghost-btn" id="scanner-export-images" type="button" disabled>حفظ صور ZIP</button>
+        <button class="icon-btn" id="scanner-close" type="button" aria-label="إغلاق">✕</button>
+      </div>
+    </header>
+
+    <div class="scanner-body">
+      <aside class="scanner-pages-wrap">
+        <ul class="scanner-pages" id="scanner-pages"></ul>
+        <p class="scanner-pages-hint">اضغط على أي صفحة لتعديلها</p>
+      </aside>
+
+      <section class="scanner-stage">
+        <div class="scanner-empty" id="scanner-empty">
+          <div class="scanner-drop" id="scanner-drop">
+            <p><strong>أضف صور المستندات</strong></p>
+            <p class="muted">صوّر الورقة بالهاتف ثم ارفعها هنا — اسحب وأفلت أو اضغط</p>
+            <p class="muted small">JPG · PNG · WebP — عدة صفحات مدعومة</p>
+          </div>
+        </div>
+
+        <div class="crop-wrap" id="crop-wrap">
+          <div class="crop-frame" id="crop-frame">
+            <canvas id="crop-canvas"></canvas>
+            <svg class="crop-overlay" id="crop-overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+          </div>
+        </div>
+
+        <div class="stage-tools">
+          <button class="ghost-btn small" id="scanner-rotate-left" type="button" disabled title="تدوير يسار">↺ تدوير</button>
+          <button class="ghost-btn small" id="scanner-rotate-right" type="button" disabled title="تدوير يمين">تدوير ↻</button>
+          <button class="ghost-btn small" id="scanner-flip" type="button" disabled>قلب</button>
+          <button class="ghost-btn small" id="scanner-detect" type="button" disabled title="اكتشاف حدود الورقة">اكتشاف تلقائي</button>
+          <button class="ghost-btn small" id="scanner-crop-all" type="button" disabled>تحديد كل الورقة</button>
+          <button class="ghost-btn small danger" id="scanner-page-delete" type="button" disabled>حذف الصفحة</button>
+          <label class="apply-all"><input type="checkbox" id="scanner-filter-all"> تطبيق الفلتر على كل الصفحات</label>
+        </div>
+
+        <div class="filters-strip" id="filters-strip"></div>
+        <p class="scanner-status" id="scanner-status" hidden></p>
+        <p class="scanner-hint">اسحب الزوايا الأربع لتحديد حدود الورقة — سيُصحَّح الميل والمنظور تلقائياً عند الحفظ.</p>
+      </section>
+    </div>
+
+    <input type="file" id="scanner-input" accept="image/*" multiple hidden>
+  </div>
+
   <div class="toast" id="toast" hidden></div>
 
   <footer class="site-footer">

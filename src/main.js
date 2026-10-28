@@ -77,6 +77,11 @@ const TOOLS = [
     accept: ".pdf",
   },
   {
+    id: "scan:images", cat: "image", icon: "scan", title: "مسح ضوئي (قص + فلاتر)",
+    desc: "صوّر الورقة بالهاتف، اضبط زوايا القص، واختر فلتراً — ثم احفظ PDF أو صوراً.",
+    accept: "image/*", multiple: true, scanner: true,
+  },
+  {
     id: "img:to-pdf", cat: "image", icon: "pdf", title: "صور ← PDF",
     desc: "حوّل صور JPG/PNG/WebP إلى ملف PDF واحد.",
     accept: "image/*", multiple: true, options: [
@@ -216,12 +221,34 @@ function renderTools(filter = "all") {
       <h3>${tool.title}</h3>
       <p>${tool.desc}</p>
       <span class="tool-tag">${tool.multiple ? "ملفات متعددة" : "ملف واحد"}</span>`;
-    card.addEventListener("click", () => openWorkspace(tool));
+    card.addEventListener("click", () => { openTool(tool); });
     grid.appendChild(card);
   });
 }
 
 /* ----------------------------- workspace ------------------------------ */
+
+let scanner = null;
+
+/** Lazily loads the scan module (keeps the main bundle small). */
+async function getScanner() {
+  if (!scanner) {
+    const { createScanner } = await import("./scan/scanner.js");
+    scanner = createScanner({ onToast: (text) => toast(text), onClose: () => {} });
+    window.__scannerDebug = scanner; // used by test/scan-e2e.mjs
+  }
+  return scanner;
+}
+
+/** Tools with their own dedicated screen (the scan workspace) bypass the generic panel. */
+async function openTool(tool) {
+  if (tool && tool.scanner) {
+    const instance = await getScanner();
+    instance.open();
+    return;
+  }
+  openWorkspace(tool);
+}
 
 function openWorkspace(tool) {
   state.tool = tool;
@@ -380,6 +407,10 @@ function fail(message) {
 async function runTool() {
   const tool = state.tool;
   if (!tool || state.busy) return;
+  if (tool.scanner) {
+    (await getScanner()).open();
+    return;
+  }
   $("#ws-error").hidden = true;
 
   if (!state.files.length) return fail("أضف ملفاً واحداً على الأقل أولاً.");
@@ -697,7 +728,7 @@ function wire() {
   $$("#quick-routes .chip").forEach((chip) => {
     chip.addEventListener("click", () => {
       const tool = TOOLS.find((t) => t.id === chip.dataset.route);
-      if (tool) openWorkspace(tool);
+      if (tool) openTool(tool);
     });
   });
 
