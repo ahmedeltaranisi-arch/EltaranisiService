@@ -187,10 +187,27 @@
           <button class="ghost-btn small" id="scanner-rotate-left" type="button" disabled title="تدوير يسار">↺ تدوير</button>
           <button class="ghost-btn small" id="scanner-rotate-right" type="button" disabled title="تدوير يمين">تدوير ↻</button>
           <button class="ghost-btn small" id="scanner-flip" type="button" disabled>قلب</button>
-          <button class="ghost-btn small" id="scanner-detect" type="button" disabled title="اكتشاف حدود الورقة">اكتشاف تلقائي</button>
+          <button class="ghost-btn small" id="scanner-detect" type="button" disabled title="اكتشاف حدود الورقة لهذه الصفحة">اكتشاف تلقائي</button>
+          <button class="ghost-btn small" id="scanner-detect-all" type="button" disabled title="اكتشاف الحدود لكل الصفحات">اكتشاف للكل</button>
+          <button class="ghost-btn small" id="scanner-rotate-all" type="button" disabled title="تدوير كل الصفحات 90°">تدوير الكل</button>
+          <button class="ghost-btn small" id="scanner-undo" type="button" disabled title="تراجع عن آخر تعديل">↶ تراجع</button>
           <button class="ghost-btn small" id="scanner-crop-all" type="button" disabled>تحديد كل الورقة</button>
           <button class="ghost-btn small danger" id="scanner-page-delete" type="button" disabled>حذف الصفحة</button>
           <label class="apply-all"><input type="checkbox" id="scanner-filter-all"> تطبيق الفلتر على كل الصفحات</label>
+        </div>
+
+        <div class="adjust-row" id="adjust-row">
+          <label class="adjust-item">
+            <span>السطوع</span>
+            <input type="range" id="scanner-brightness" min="-60" max="60" step="5" value="0">
+            <output id="scanner-brightness-value">0</output>
+          </label>
+          <label class="adjust-item">
+            <span>التباين</span>
+            <input type="range" id="scanner-contrast" min="-50" max="50" step="5" value="0">
+            <output id="scanner-contrast-value">0</output>
+          </label>
+          <button class="ghost-btn small" id="scanner-adjust-reset" type="button">إعادة الضبط</button>
         </div>
 
         <div class="filters-strip" id="filters-strip"></div>

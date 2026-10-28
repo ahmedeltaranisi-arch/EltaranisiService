@@ -1,7 +1,7 @@
 // Scan workspace UI: add photos, drag the 4 corners, pick a filter, export PDF/images.
 import { FILTERS, applyFilter } from "./filters.js";
-import { defaultQuad, rotateCanvas, flipCanvas, detectQuad } from "./perspective.js";
-import { buildScanPdf, buildScanImages, buildScanImageFiles, renderPageCanvas } from "./export.js";
+import { defaultQuad, rotateCanvas, flipCanvas, detectQuadDetailed } from "./perspective.js";
+import { buildScanPdf, buildScanImages, buildScanImageFiles, renderPageCanvas, applyAdjust } from "./export.js";
 
 const PREVIEW_MAX = 1000; // preview canvas longest side
 const THUMB_MAX = 150;
@@ -89,6 +89,11 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
   const viewerName = document.getElementById("scan-viewer-name");
   const viewerMeta = document.getElementById("scan-viewer-meta");
   const viewerDownload = document.getElementById("scan-viewer-download");
+  const brightnessInput = document.getElementById("scanner-brightness");
+  const contrastInput = document.getElementById("scanner-contrast");
+  const brightnessValue = document.getElementById("scanner-brightness-value");
+  const contrastValue = document.getElementById("scanner-contrast-value");
+  const history = []; // undo stack (canvas + quad + filter + adjust snapshots)
 
   const state = {
     pages: [],
@@ -117,6 +122,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     button.addEventListener("click", () => {
       const page = activePage();
       if (!page) return;
+      snapshot(`فلتر ${filter.label}`);
       if (state.applyToAll) {
         state.pages.forEach((item) => { item.filter = filter.id; });
       } else {
@@ -181,14 +187,16 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     for (const file of images) {
       try {
         const canvas = await fileToCanvas(file);
-        const detected = detectQuad(canvas);
+        const detection = detectQuadDetailed(canvas);
         const page = {
           id: uid(),
           name: file.name,
           canvas,
-          quad: detected || defaultQuad(1, 1),
-          autoDetected: Boolean(detected),
+          quad: detection.quad || defaultQuad(1, 1),
+          autoDetected: Boolean(detection.quad),
+          confidence: detection.confidence || 0,
           filter: "original",
+          adjust: { brightness: 0, contrast: 0 },
           perspective: true,
         };
         state.pages.push(page);
@@ -213,7 +221,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     if (filtersStrip) filtersStrip.classList.toggle("empty", !hasPages);
     ["scanner-export-pdf", "scanner-export-images", "scanner-rotate-left", "scanner-rotate-right",
       "scanner-flip", "scanner-crop-all", "scanner-detect", "scanner-page-delete",
-      "scanner-export-zip"].forEach((id) => {
+      "scanner-export-zip", "scanner-detect-all", "scanner-rotate-all", "scanner-adjust-reset"].forEach((id) => {
       const node = document.getElementById(id);
       if (node) node.disabled = !hasPages;
     });
@@ -236,17 +244,174 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
       ctx.putImageData(data, 0, 0);
       item.appendChild(thumb);
       const label = document.createElement("span");
+      label.className = "page-item-index";
       label.textContent = `${index + 1}`;
       item.appendChild(label);
+      const tools = document.createElement("span");
+      tools.className = "page-item-tools";
+      const back = document.createElement("button");
+      back.type = "button";
+      back.className = "page-move";
+      back.textContent = "›";
+      back.title = "تحريك لليمين";
+      back.disabled = index === state.pages.length - 1;
+      back.addEventListener("click", (event) => {
+        event.stopPropagation();
+        movePage(index, index + 1);
+      });
+      const forward = document.createElement("button");
+      forward.type = "button";
+      forward.className = "page-move";
+      forward.textContent = "‹";
+      forward.title = "تحريك لليسار";
+      forward.disabled = index === 0;
+      forward.addEventListener("click", (event) => {
+        event.stopPropagation();
+        movePage(index, index - 1);
+      });
+      tools.append(back, forward);
+      item.appendChild(tools);
       item.addEventListener("click", () => {
         state.activeId = page.id;
         renderPageList();
         refreshFilters();
         drawStage();
         refreshFilterThumbs();
+        syncAdjustControls();
       });
       pagesList.appendChild(item);
     });
+  }
+
+  /* -------------------------------- history ------------------------------- */
+
+  function snapshot(label) {
+    history.push({
+      label,
+      pages: state.pages.map((page) => ({
+        id: page.id,
+        quad: page.quad.map((point) => ({ ...point })),
+        filter: page.filter,
+        adjust: { ...(page.adjust || {}) },
+        canvas: page.canvas,
+        autoDetected: page.autoDetected,
+        confidence: page.confidence,
+      })),
+      activeId: state.activeId,
+    });
+    if (history.length > 25) history.shift();
+    const undoButton = document.getElementById("scanner-undo");
+    if (undoButton) undoButton.disabled = false;
+  }
+
+  function undo() {
+    const entry = history.pop();
+    if (!entry) return;
+    state.pages = entry.pages.map((snapshotPage) => {
+      let current = state.pages.find((page) => page.id === snapshotPage.id);
+      if (!current) {
+        current = { id: snapshotPage.id, name: "page", canvas: snapshotPage.canvas, perspective: true };
+        state.pages.push(current);
+      }
+      current.quad = snapshotPage.quad.map((point) => ({ ...point }));
+      current.filter = snapshotPage.filter;
+      current.adjust = { ...snapshotPage.adjust };
+      current.canvas = snapshotPage.canvas;
+      current.autoDetected = snapshotPage.autoDetected;
+      current.confidence = snapshotPage.confidence;
+      return current;
+    });
+    state.activeId = entry.activeId;
+    const undoButton = document.getElementById("scanner-undo");
+    if (undoButton) undoButton.disabled = history.length === 0;
+    renderPageList();
+    refreshFilters();
+    drawStage();
+    refreshFilterThumbs();
+    updateCount();
+    syncAdjustControls();
+    onToast(`تم التراجع عن: ${entry.label}`);
+  }
+
+  /* --------------------------- batch operations --------------------------- */
+
+  function setBusy(busy, label) {
+    state.busy = busy;
+    if (label) setStatus(label);
+    if (!busy) setStatus("");
+  }
+
+  async function detectAll() {
+    if (!state.pages.length || state.busy) return;
+    snapshot("اكتشاف تلقائي للكل");
+    state.busy = true;
+    let worked = 0;
+    for (let index = 0; index < state.pages.length; index += 1) {
+      const page = state.pages[index];
+      setStatus(`اكتشاف حدود الورقة… صفحة ${index + 1} من ${state.pages.length}`);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const detection = detectQuadDetailed(page.canvas);
+      if (detection.quad) {
+        page.quad = detection.quad;
+        page.autoDetected = true;
+        page.confidence = detection.confidence;
+        worked += 1;
+      }
+    }
+    state.busy = false;
+    setStatus("");
+    drawStage();
+    renderPageList();
+    refreshFilters();
+    onToast(worked === state.pages.length
+      ? `تم اكتشاف حدود ${worked} صفحة`
+      : `تم اكتشاف ${worked} من ${state.pages.length} صفحة — راجع الباقي يدوياً`);
+  }
+
+  function rotateAll() {
+    if (!state.pages.length || state.busy) return;
+    snapshot("تدوير كل الصفحات");
+    state.pages.forEach((page) => {
+      page.canvas = rotateCanvas(page.canvas, 90);
+      page.quad = rotateQuad(page.quad, 90);
+    });
+    drawStage();
+    renderPageList();
+    refreshFilterThumbs();
+    onToast(`تم تدوير ${state.pages.length} صفحة`);
+  }
+
+  function movePage(fromIndex, toIndex) {
+    if (toIndex < 0 || toIndex >= state.pages.length || fromIndex === toIndex) return;
+    snapshot("ترتيب الصفحات");
+    const [page] = state.pages.splice(fromIndex, 1);
+    state.pages.splice(toIndex, 0, page);
+    renderPageList();
+    updateCount();
+  }
+
+  /* ------------------------------- adjust UI ------------------------------ */
+
+  function syncAdjustControls() {
+    const page = activePage();
+    const adjust = (page && page.adjust) || { brightness: 0, contrast: 0 };
+    if (brightnessInput) brightnessInput.value = String(adjust.brightness || 0);
+    if (contrastInput) contrastInput.value = String(adjust.contrast || 0);
+    if (brightnessValue) brightnessValue.textContent = String(adjust.brightness || 0);
+    if (contrastValue) contrastValue.textContent = String(adjust.contrast || 0);
+  }
+
+  function setAdjust(key, value) {
+    const page = activePage();
+    if (!page) return;
+    const targets = state.applyToAll ? state.pages : [page];
+    targets.forEach((item) => {
+      item.adjust = { brightness: 0, contrast: 0, ...(item.adjust || {}), [key]: Number(value) };
+    });
+    if (brightnessValue) brightnessValue.textContent = String(page.adjust.brightness || 0);
+    if (contrastValue) contrastValue.textContent = String(page.adjust.contrast || 0);
+    drawStage();
+    renderPageList();
   }
 
   /* ------------------------------ crop canvas ----------------------------- */
@@ -294,6 +459,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     ctx.drawImage(source, 0, 0);
     const data = ctx.getImageData(0, 0, previewCanvas.width, previewCanvas.height);
     applyFilter(data, page.filter || "original");
+    applyAdjust(data, page.adjust);
     ctx.putImageData(data, 0, 0);
 
     stage.width = previewCanvas.width;
@@ -320,7 +486,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     const index = state.pages.findIndex((item) => item.id === page.id) + 1;
     caption.innerHTML = `<span>صفحة ${index} من ${state.pages.length} · ${page.canvas.width}×${page.canvas.height}</span>`
       + `<span>${filter ? filter.label : "Original"} — ${filter ? filter.arabic : "الأصلية"}`
-      + `${page.autoDetected === false ? " · قص يدوي" : " · اكتشاف تلقائي"}</span>`;
+      + `${page.autoDetected === false ? " · قص يدوي" : ` · اكتشاف تلقائي ${Math.round((page.confidence || 0) * 100)}%`}</span>`;
   }
 
   function drawOverlay() {
@@ -409,6 +575,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
   function rotate(angle) {
     const page = activePage();
     if (!page) return;
+    snapshot(angle === 90 ? "تدوير يمين" : "تدوير يسار");
     page.canvas = rotateCanvas(page.canvas, angle);
     page.quad = rotateQuad(page.quad, angle);
     drawStage();
@@ -419,6 +586,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
   function flip() {
     const page = activePage();
     if (!page) return;
+    snapshot("قلب الصفحة");
     page.canvas = flipCanvas(page.canvas);
     page.quad = flipQuad(page.quad);
     drawStage();
@@ -429,6 +597,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
   function cropAll() {
     const page = activePage();
     if (!page) return;
+    snapshot("تحديد كل الورقة");
     page.quad = defaultQuad(1, 1);
     drawStage();
   }
@@ -436,20 +605,30 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
   function autoDetect() {
     const page = activePage();
     if (!page) return;
-    const quad = detectQuad(page.canvas);
-    if (!quad) {
-      onToast("لم أتمكن من اكتشاف حدود الورقة — اضبط الزوايا يدوياً");
-      return;
-    }
-    page.quad = quad;
-    page.autoDetected = true;
-    drawStage();
-    onToast("تم اكتشاف حدود الورقة — يمكنك تعديل الزوايا بالسحب");
+    setStatus("جارٍ تحليل حدود الورقة…");
+    // let the status text paint before the CPU-heavy detection runs
+    setTimeout(() => {
+      const detection = detectQuadDetailed(page.canvas);
+      setStatus("");
+      if (!detection.quad) {
+        onToast("لم أتمكن من اكتشاف حدود الورقة — اسحب الزوايا الأربع يدوياً");
+        return;
+      }
+      page.quad = detection.quad;
+      page.autoDetected = true;
+      page.confidence = detection.confidence;
+      drawStage();
+      const percent = Math.round(detection.confidence * 100);
+      onToast(detection.confidence >= 0.6
+        ? `تم اكتشاف حدود الورقة (ثقة ${percent}%) — يمكنك تعديل الزوايا بالسحب`
+        : `اكتشاف بثقة منخفضة (${percent}%) — راجع الزوايا واسحبها إن لزم`);
+    }, 30);
   }
 
   function deletePage() {
     const index = state.pages.findIndex((page) => page.id === state.activeId);
     if (index === -1) return;
+    snapshot("حذف صفحة");
     state.pages.splice(index, 1);
     state.activeId = state.pages[Math.min(index, state.pages.length - 1)]?.id || null;
     renderPageList();
@@ -649,6 +828,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     root.hidden = false;
     document.body.classList.add("scanner-open");
     drawStage();
+    syncAdjustControls();
     requestAnimationFrame(fitStage);
     refreshFilters();
     updateCount();
@@ -692,6 +872,21 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
   document.getElementById("scanner-flip").addEventListener("click", flip);
   document.getElementById("scanner-crop-all").addEventListener("click", cropAll);
   document.getElementById("scanner-detect").addEventListener("click", autoDetect);
+  document.getElementById("scanner-detect-all").addEventListener("click", detectAll);
+  document.getElementById("scanner-rotate-all").addEventListener("click", rotateAll);
+  document.getElementById("scanner-undo").addEventListener("click", undo);
+  if (brightnessInput) brightnessInput.addEventListener("input", (event) => setAdjust("brightness", event.target.value));
+  if (contrastInput) contrastInput.addEventListener("input", (event) => setAdjust("contrast", event.target.value));
+  const adjustReset = document.getElementById("scanner-adjust-reset");
+  if (adjustReset) {
+    adjustReset.addEventListener("click", () => {
+      snapshot("إعادة ضبط السطوع والتباين");
+      state.pages.forEach((item) => { item.adjust = { brightness: 0, contrast: 0 }; });
+      syncAdjustControls();
+      drawStage();
+      renderPageList();
+    });
+  }
   document.getElementById("scanner-page-delete").addEventListener("click", deletePage);
   document.getElementById("scanner-export-pdf").addEventListener("click", exportPdf);
   document.getElementById("scanner-export-images").addEventListener("click", exportImages);
@@ -711,8 +906,16 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
       if (viewer.hidden) return;
       if (event.key === "ArrowLeft") stepViewer(-1);
       if (event.key === "ArrowRight") stepViewer(1);
+      if (event.key === "ArrowLeft") stepViewer(-1);
     });
   }
+  document.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !root.hidden) {
+      event.preventDefault();
+      undo();
+    }
+  });
+
   // one Escape handler decides: close the preview first, the workspace second
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
@@ -740,7 +943,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     const index = state.pages.findIndex((item) => item.id === page.id) + 1;
     caption.innerHTML = `<span>صفحة ${index} من ${state.pages.length} · ${page.canvas.width}×${page.canvas.height}</span>`
       + `<span>${filter ? filter.label : "Original"} — ${filter ? filter.arabic : "الأصلية"}`
-      + `${page.autoDetected === false ? " · قص يدوي" : " · اكتشاف تلقائي"}</span>`;
+      + `${page.autoDetected === false ? " · قص يدوي" : ` · اكتشاف تلقائي ${Math.round((page.confidence || 0) * 100)}%`}</span>`;
   }
 
   return {
@@ -761,7 +964,19 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     rotate,
     flip,
     cropAll,
+    pageOrder: () => state.pages.map((page) => page.id),
+    pageState: (id) => {
+      const page = state.pages.find((item) => item.id === id);
+      return page ? { filter: page.filter, adjust: { ...page.adjust }, quad: page.quad } : null;
+    },
+    historyDepth: () => history.length,
     autoDetect,
+    detectAll,
+    rotateAll,
+    undo,
+    movePage,
+    setAdjust,
+    syncAdjustControls,
     deletePage,
     selectPage: (id) => {
       state.activeId = id;

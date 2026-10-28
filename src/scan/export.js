@@ -19,8 +19,27 @@ export function renderPageCanvas(page, { maxSize = MAX_SIDE, filterOverride = nu
   const ctx = cropped.getContext("2d", { willReadFrequently: true });
   const imageData = ctx.getImageData(0, 0, cropped.width, cropped.height);
   applyFilter(imageData, filterOverride || page.filter);
+  applyAdjust(imageData, page.adjust);
   ctx.putImageData(imageData, 0, 0);
   return cropped;
+}
+
+/** Brightness / contrast touch-up applied after the scan filter. */
+export function applyAdjust(imageData, adjust) {
+  if (!adjust) return imageData;
+  const brightness = Number(adjust.brightness) || 0; // -60 … +60
+  const contrast = Number(adjust.contrast) || 0; // -50 … +50
+  if (!brightness && !contrast) return imageData;
+  const factor = (259 * (contrast * 2.55 + 255)) / (255 * (259 - contrast * 2.55));
+  const { data } = imageData;
+  for (let i = 0; i < data.length; i += 4) {
+    for (let c = 0; c < 3; c += 1) {
+      let value = data[i + c] + brightness;
+      value = factor * (value - 128) + 128;
+      data[i + c] = value < 0 ? 0 : value > 255 ? 255 : value;
+    }
+  }
+  return imageData;
 }
 
 function toBlob(canvas, type, quality) {
