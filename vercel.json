@@ -3,6 +3,18 @@
   "version": 2,
   "framework": null,
   "buildCommand": "npm run build",
-  "outputDirectory": "public",
-  "cleanUrls": true
+  "outputDirectory": "dist",
+  "functions": {
+    "api/convert.mjs": {
+      "memory": 3009,
+      "maxDuration": 60,
+      "includeFiles": "node_modules/{@sparticuz/chromium,pdfjs-dist}/**"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    }
+  ]
 }

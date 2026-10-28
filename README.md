@@ -1,43 +1,63 @@
-# Eltaranisi Service+ — interactive preview
+# Eltaranisi Service+ — أدوات PDF وتحويل الملفات (تعمل فعلياً)
 
-A responsive, bilingual (Arabic RTL / English LTR) front-end preview based on the attached product brief. It uses local HTML, CSS, and JavaScript with no external assets or dependencies.
+موقع عربي (RTL) لأدوات PDF يعمل على الخادم فعلياً — ليس واجهة تجريبية.
 
-## What works in this preview
+## الأدوات المتاحة (25 عملية)
 
-- Arabic/English language toggle and light/dark theme.
-- Responsive navigation and command palette (`Ctrl/Cmd + K`).
-- Drag-and-drop or local file selection, file name/type/size display, local image preview, and a short local text preview.
-- A bilingual conversion dropdown with common routes including PDF → Word/Excel/PowerPoint/image, Office → PDF, image → PDF, and text/CSV routes.
-- Interactive tool/plan dialogs and FAQ disclosures.
-- Files are never uploaded by this UI preview.
+### أدوات PDF
+| الأداة | العملية | ملاحظات |
+| --- | --- | --- |
+| دمج PDF | `pdf:merge` | دمج عدة ملفات بالترتيب |
+| تقسيم PDF | `pdf:split` | نطاق صفحات / كل صفحة في ملف / كل N صفحات (ZIP عند التعدد) |
+| ضغط PDF | `pdf:compress` | خفيف / متوسط / قوي مع تقرير نسبة التوفير |
+| ترتيب وحذف الصفحات | `pdf:organize` | تسلسل مثل `3,1,2` |
+| تدوير | `pdf:rotate` | 90/180/270 لكل الصفحات أو نطاق |
+| علامة مائية | `pdf:watermark` | نص عربي أو إنجليزي، شفافية، مائل/وسط/عريض |
+| ترقيم الصفحات | `pdf:numbers` | صيغة قابلة للتخصيص مع دعم العربية |
+| PDF ← Word | `pdf:to-docx` | DOCX مع اتجاه RTL |
+| PDF ← Excel | `pdf:to-xlsx` | استخراج صفوف/أعمدة |
+| PDF ← PowerPoint | `pdf:to-pptx` | كل صفحة شريحة |
+| PDF ← JPG / PNG | `pdf:to-jpg` / `pdf:to-png` | DPI قابل للضبط |
+| PDF ← نص | `pdf:to-txt` | استخراج مع إعادة ترتيب عربي |
+| فحص طبقة النص | `pdf:has-text` | للكشف عن الملفات الممسوحة |
 
-## Important scope note
+### تحويل الصيغ
+`to-pdf` (Word/Excel/PowerPoint/نص/CSV/HTML/صور ← PDF)، `docx:to-pdf`، `xlsx:to-pdf`، `pptx:to-pdf`، `img:to-pdf`، `img:convert`، `csv:to-xlsx`، `xlsx:to-csv`، `docx:to-txt`، `pptx:to-jpg`.
 
-This is a **front-end preview**, not the production document platform. Authentication, cloud storage, OCR, conversion, AI, subscriptions, background jobs, and team features are not connected. The tool dialogs explicitly say so; no simulated processing result is presented as real. A production launch will need the backend, storage, queue, document-processing engines, and security architecture described in the product brief.
+## كيف يعمل
+- **الواجهة**: HTML/CSS/JS خفيف يُبنى بـ Vite إلى `dist/`.
+- **المحرك**: دالة Vercel واحدة `api/convert.mjs` (Node 20/24) تستقبل multipart وتُرجع الملف الناتج مباشرة.
+- **جودة العربية**:
+  - التحويل *إلى* PDF يتم عبر Chromium headless (تنسيق عربي كامل + RTL) بخطوط مضمّنة (Almarai / Amiri).
+  - العلامة المائية والترقيم يُرسمان عبر `@napi-rs/canvas` (تشكيل حروف عربية صحيح) ثم يُدمجان كصورة داخل PDF.
+  - التحويل *من* PDF يعيد بناء ترتيب الحروف من ترتيب العرض إلى الترتيب المنطقي (`lib/arabic.mjs`) مع كشف اتجاه كل سطر.
+- الملفات لا تُخزَّن: تُعالَج في الذاكرة داخل الطلب ثم تُرسل.
 
-## Run locally
-
-Requires Node.js 18 or newer; there are no npm dependencies.
-
+## التشغيل محلياً
 ```bash
-npm run dev
+npm install
+npm run build        # يبني الواجهة إلى dist/
+npm run dev          # خادم محلي: http://localhost:4173
+npm test             # 27 اختبار API فعلي
+node test/ui-e2e.mjs # 7 اختبارات واجهة عبر متصفح حقيقي
 ```
 
-Open `http://localhost:4173`.
+## الاختبارات
+`test/run-tests.mjs` ينشئ ملفات تجريبية عربية (Word/Excel/PowerPoint/صور/CSV) ثم يمرر كل أداة عبر HTTP ويتحقق من الناتج بإعادة تحليله (عدد الصفحات، وجود النص العربي، سلامة ZIP/JPEG...).
 
-Build the static output locally with:
-
+## النشر
 ```bash
-npm run build
+npx vercel deploy --prod
 ```
+`vercel.json` يضبط الدالة بذاكرة 3GB ومدة 60 ثانية و`includeFiles` لحزمة Chromium اللازمة لتحويل Office/HTML إلى PDF.
 
-This writes the deployable HTML, CSS, JavaScript, and favicon to `public/`.
+---
 
-## Deploy to Vercel
+## الموقع المنشور
+https://eltaranisiservice.vercel.app
 
-1. Push this folder to a GitHub repository.
-2. In Vercel, choose **Add New → Project** and import that repository.
-3. Select **Other** (static files) if asked for a framework. The included `vercel.json` runs `npm run build` and serves `public/`.
-4. Deploy. The site is a static front-end and needs no environment variables.
+النسخة السابقة (واجهة تجريبية ثابتة بدون محرك تحويل) محفوظة في `legacy-preview/` للمرجعية.
 
-`vercel.json` is included. This preview can also be served from GitHub Pages as static files.
+## نتائج الفحص الآلي (2025)
+- اختبارات المحرك عبر HTTP: **27/27 ناجحة** محلياً وعلى الموقع المنشور.
+- اختبارات الواجهة في متصفح حقيقي: **7/7 ناجحة**.
