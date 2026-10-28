@@ -82,6 +82,13 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
   const filesList = document.getElementById("scan-files-list");
   const filesCount = document.getElementById("scan-files-count");
   const filesUrls = []; // object URLs kept alive while the result panel is open
+  let preparedFiles = []; // [{ name, blob, url, width, height }] for the viewer
+  let viewerIndex = 0;
+  const viewer = document.getElementById("scan-viewer");
+  const viewerImg = document.getElementById("scan-viewer-img");
+  const viewerName = document.getElementById("scan-viewer-name");
+  const viewerMeta = document.getElementById("scan-viewer-meta");
+  const viewerDownload = document.getElementById("scan-viewer-download");
 
   const state = {
     pages: [],
@@ -483,18 +490,23 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     }
   }
 
+  const EYE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="2.8"/></svg>';
+
   function openResultPanel(files) {
     if (!filesPanel || !filesList) return;
     clearResultPanel();
-    filesCount.textContent = String(files.length);
-    files.forEach((file) => {
+    preparedFiles = files.map((file) => ({ ...file }));
+    filesCount.textContent = String(preparedFiles.length);
+    preparedFiles.forEach((file, index) => {
       const url = URL.createObjectURL(file.blob);
+      file.url = url;
       filesUrls.push(url);
       const item = document.createElement("li");
       item.className = "scan-file";
       const thumb = document.createElement("img");
       thumb.src = url;
       thumb.alt = file.name;
+      thumb.title = "اضغط لعرض الصورة بالحجم الكامل";
       const meta = document.createElement("div");
       meta.className = "scan-file-meta";
       const name = document.createElement("span");
@@ -504,20 +516,65 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
       size.className = "scan-file-size";
       size.textContent = `${file.width}×${file.height} · ${(file.blob.size / 1024).toFixed(0)} كيلوبايت`;
       meta.append(name, size);
+
+      const actions = document.createElement("div");
+      actions.className = "scan-file-actions";
+      const view = document.createElement("button");
+      view.type = "button";
+      view.className = "scan-file-view";
+      view.title = `عرض ${file.name}`;
+      view.setAttribute("aria-label", `عرض ${file.name}`);
+      view.innerHTML = EYE_ICON;
+      view.addEventListener("click", () => openViewer(index));
       const link = document.createElement("a");
       link.href = url;
       link.download = file.name;
       link.textContent = "تحميل";
-      item.append(thumb, meta, link);
+      actions.append(view, link);
+      thumb.addEventListener("click", () => openViewer(index));
+
+      item.append(thumb, meta, actions);
       filesList.appendChild(item);
     });
     filesPanel.hidden = false;
     filesPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
+  /* ------------------------------ image viewer ----------------------------- */
+
+  function openViewer(index) {
+    if (!viewer || !preparedFiles.length) return;
+    viewerIndex = Math.max(0, Math.min(preparedFiles.length - 1, index));
+    const file = preparedFiles[viewerIndex];
+    viewerImg.src = file.url;
+    viewerImg.alt = file.name;
+    viewerName.textContent = file.name;
+    viewerMeta.textContent = `${file.width}×${file.height} بكسل · ${(file.blob.size / 1024).toFixed(0)} كيلوبايت`
+      + ` · ${viewerIndex + 1} من ${preparedFiles.length}`;
+    viewerDownload.href = file.url;
+    viewerDownload.download = file.name;
+    const many = preparedFiles.length > 1;
+    document.getElementById("scan-viewer-prev").disabled = !many;
+    document.getElementById("scan-viewer-next").disabled = !many;
+    viewer.hidden = false;
+  }
+
+  function closeViewer() {
+    if (!viewer) return;
+    viewer.hidden = true;
+  }
+
+  function stepViewer(delta) {
+    if (viewer.hidden || preparedFiles.length < 2) return;
+    const next = (viewerIndex + delta + preparedFiles.length) % preparedFiles.length;
+    openViewer(next);
+  }
+
   function clearResultPanel() {
+    closeViewer();
     if (filesList) filesList.innerHTML = "";
     while (filesUrls.length) URL.revokeObjectURL(filesUrls.pop());
+    preparedFiles = [];
     if (filesPanel) filesPanel.hidden = true;
   }
 
@@ -643,8 +700,27 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
   if (filesAll) filesAll.addEventListener("click", downloadAllFiles);
   const filesClose = document.getElementById("scan-files-close");
   if (filesClose) filesClose.addEventListener("click", clearResultPanel);
+  if (viewer) {
+    document.getElementById("scan-viewer-close").addEventListener("click", closeViewer);
+    document.getElementById("scan-viewer-prev").addEventListener("click", () => stepViewer(-1));
+    document.getElementById("scan-viewer-next").addEventListener("click", () => stepViewer(1));
+    document.getElementById("scan-viewer-body").addEventListener("click", (event) => {
+      if (event.target.id === "scan-viewer-body") closeViewer();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (viewer.hidden) return;
+      if (event.key === "ArrowLeft") stepViewer(-1);
+      if (event.key === "ArrowRight") stepViewer(1);
+    });
+  }
+  // one Escape handler decides: close the preview first, the workspace second
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !root.hidden) close();
+    if (event.key !== "Escape") return;
+    if (viewer && !viewer.hidden) {
+      closeViewer();
+      return;
+    }
+    if (!root.hidden) close();
   });
   window.addEventListener("resize", () => {
     if (root.hidden) return;
@@ -678,6 +754,10 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     exportZip,
     downloadAllFiles,
     clearResultPanel,
+    openViewer,
+    closeViewer,
+    stepViewer,
+    getPreparedFiles: () => preparedFiles,
     rotate,
     flip,
     cropAll,

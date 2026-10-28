@@ -412,11 +412,12 @@ body.scanner-open { overflow: hidden; }
 
 .scanner-stage {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
+  grid-template-rows: auto minmax(150px, 1fr) auto auto auto auto;
   gap: 10px;
   min-height: 0;
   padding: 12px 16px 14px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 .scanner-empty { display: grid; place-items: center; min-height: 0; }
 .scanner-empty[hidden] { display: none !important; }
@@ -480,39 +481,97 @@ body.scanner-open { overflow: hidden; }
   border: 1px solid rgba(255,255,255,0.12);
   border-radius: 14px;
   background: rgba(255,255,255,0.04);
-  padding: 12px 14px;
+  padding: 8px 10px;
   display: grid;
-  gap: 10px;
+  gap: 6px;
 }
 .scan-files[hidden] { display: none !important; }
 .scan-files-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.scan-files-head strong { font-size: 13.5px; }
+.scan-files-head strong { font-size: 13px; }
 .scan-files-actions { display: flex; gap: 8px; }
-.scan-files-hint { font-size: 11.5px; color: #a7adcd; margin: 0; }
-.scan-files-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 30vh; overflow-y: auto; }
+.scan-files-hint { font-size: 11px; color: #a7adcd; margin: 0; }
+.scan-files-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 4px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
 .scan-file {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  width: 224px;
   background: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 10px;
-  padding: 6px 10px;
+  padding: 6px 8px;
 }
-.scan-file img { width: 42px; height: 54px; object-fit: cover; border-radius: 6px; background: #fff; }
-.scan-file-meta { display: grid; gap: 2px; flex: 1; min-width: 0; }
-.scan-file-name { font-size: 12.5px; font-weight: 700; }
-.scan-file-size { font-size: 11px; color: #9aa0bd; }
+.scan-file img { width: 34px; height: 46px; object-fit: cover; border-radius: 6px; background: #fff; cursor: zoom-in; flex: 0 0 auto; }
+.scan-file-meta { display: grid; gap: 1px; flex: 1; min-width: 0; }
+.scan-file-name { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scan-file-size { font-size: 10.5px; color: #9aa0bd; white-space: nowrap; }
+.scan-file-actions { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; }
 .scan-file a {
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
   color: #0f1224;
   background: #b9a9ff;
-  border-radius: 8px;
-  padding: 5px 12px;
+  border-radius: 7px;
+  padding: 5px 9px;
   text-decoration: none;
 }
 .scan-file a:hover { background: #cdc1ff; }
+.scan-file-view {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.06);
+  color: #e8eaf8;
+  cursor: pointer;
+  padding: 0;
+}
+.scan-file-view:hover { background: rgba(139,116,255,0.28); border-color: #8b74ff; }
+.scan-file-view svg { width: 16px; height: 16px; }
+
+/* full-size preview */
+.scan-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(8,9,20,0.94);
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px 8px;
+  gap: 10px;
+}
+.scan-viewer[hidden] { display: none !important; }
+.scan-viewer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.scan-viewer-title { display: grid; gap: 2px; }
+.scan-viewer-title strong { font-size: 14px; }
+.scan-viewer-title .muted { font-size: 11.5px; color: #9aa0bd; }
+.scan-viewer-actions { display: flex; align-items: center; gap: 8px; }
+.scan-viewer-actions a { text-decoration: none; display: inline-block; font-weight: 700; color: #0f1224; background: #b9a9ff; border-radius: 8px; padding: 6px 12px; font-size: 12px; }
+.scan-viewer-actions a:hover { background: #cdc1ff; }
+.scan-viewer .ghost-btn { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.16); color: #eceefb; }
+.scan-viewer-body { flex: 1; display: grid; place-items: center; min-height: 0; overflow: auto; }
+.scan-viewer-body img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+}
+.scan-viewer-hint { font-size: 11.5px; color: #8f95b5; text-align: center; margin: 0; }
+
 .scanner-hint { font-size: 12px; color: #9298b8; margin: 0; }
 .scanner-status { font-size: 12.5px; color: #b9a9ff; margin: 0; }
 

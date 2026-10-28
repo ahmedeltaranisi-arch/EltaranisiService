@@ -211,6 +211,25 @@
       </section>
     </div>
 
+    <div class="scan-viewer" id="scan-viewer" hidden>
+      <header class="scan-viewer-head">
+        <div class="scan-viewer-title">
+          <strong id="scan-viewer-name">scan-01.jpg</strong>
+          <span class="muted" id="scan-viewer-meta"></span>
+        </div>
+        <div class="scan-viewer-actions">
+          <button class="ghost-btn small" id="scan-viewer-prev" type="button" aria-label="السابق">‹ السابق</button>
+          <button class="ghost-btn small" id="scan-viewer-next" type="button" aria-label="التالي">التالي ›</button>
+          <a class="primary-btn small" id="scan-viewer-download" download>تحميل الصورة</a>
+          <button class="icon-btn" id="scan-viewer-close" type="button" aria-label="إغلاق">✕</button>
+        </div>
+      </header>
+      <div class="scan-viewer-body" id="scan-viewer-body">
+        <img id="scan-viewer-img" alt="معاينة الصورة الممسوحة">
+      </div>
+      <p class="scan-viewer-hint">اضغط في أي مكان خارج الصورة أو زر ✕ للإغلاق · استخدم ← → للتنقل</p>
+    </div>
+
     <input type="file" id="scanner-input" accept="image/*" multiple hidden>
   </div>
 

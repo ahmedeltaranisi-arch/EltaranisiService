@@ -172,6 +172,44 @@ try {
     && panel.links.join(",") === "scan-01.jpg,scan-02.jpg,scan-03.jpg", panel.links.join(", "));
   check("panel reports real dimensions and sizes", panel.sizes.every((text) => /\d+×\d+ · \d+ كيلوبايت/.test(text)), panel.sizes[0] || "");
 
+  // image viewer (eye button per file)
+  const viewButtons = await page.evaluate(() => [...document.querySelectorAll(".scan-file-view")]
+    .map((button) => ({ hasIcon: Boolean(button.querySelector("svg")), label: button.getAttribute("aria-label") })));
+  check("each file has a view (eye) button", viewButtons.length === 3 && viewButtons.every((item) => item.hasIcon),
+    viewButtons.map((item) => item.label).join(", "));
+
+  await page.click("#scan-files-list .scan-file:nth-child(2) .scan-file-view");
+  await page.waitForSelector("#scan-viewer:not([hidden])", { timeout: 10000 });
+  const viewer = await page.evaluate(() => {
+    const img = document.getElementById("scan-viewer-img");
+    return {
+      naturalWidth: img.naturalWidth,
+      naturalHeight: img.naturalHeight,
+      isBlob: img.src.startsWith("blob:"),
+      name: document.getElementById("scan-viewer-name").textContent,
+      meta: document.getElementById("scan-viewer-meta").textContent,
+      download: document.getElementById("scan-viewer-download").getAttribute("download"),
+    };
+  });
+  check("viewer shows the enlarged image (real pixels)",
+    viewer.naturalWidth > 400 && viewer.naturalHeight > 400 && viewer.isBlob,
+    `${viewer.name} ${viewer.naturalWidth}×${viewer.naturalHeight}`);
+  check("viewer reports name, size and position", /\d+×\d+ بكسل/.test(viewer.meta) && /2 من 3/.test(viewer.meta)
+    && viewer.download === viewer.name, viewer.meta);
+
+  await page.click("#scan-viewer-next");
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const viewerNext = await page.evaluate(() => document.getElementById("scan-viewer-name").textContent);
+  check("viewer next/previous navigation works", viewerNext === "scan-03.jpg", viewerNext);
+
+  await page.keyboard.press("Escape");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const viewerClosed = await page.evaluate(() => ({
+    viewerHidden: document.getElementById("scan-viewer").hidden,
+    scannerOpen: !document.getElementById("scanner").hidden,
+  }));
+  check("Escape closes the viewer only (scanner stays open)", viewerClosed.viewerHidden && viewerClosed.scannerOpen);
+
   await page.evaluate(() => document.getElementById("scan-files-all").click());
   await new Promise((resolve) => setTimeout(resolve, 5000));
   const jpgs = fs.readdirSync(OUT_DIR).filter((name) => /^scan-\d+\.jpg$/.test(name)).sort();
