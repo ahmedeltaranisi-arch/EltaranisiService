@@ -167,11 +167,23 @@ const TOOLS = [
   },
 ];
 
+const SERVER_LIMIT = 4.4 * 1024 * 1024; // Vercel rejects larger request bodies with 413
+const HARD_LIMIT = 200 * 1024 * 1024;   // browser engine keeps everything on the device
+const SERVER_OPS = new Set([
+  "to-pdf", "docx:to-pdf", "xlsx:to-pdf", "pptx:to-pdf",
+  "docx:to-txt", "xlsx:to-csv", "csv:to-xlsx", "pptx:to-jpg",
+]);
+
 const state = {
   tool: null,
   files: [],
   busy: false,
+  cancelled: false,
+  engine: null,
 };
+
+const isServerOp = (tool) => Boolean(tool) && SERVER_OPS.has(tool.id);
+const totalSize = () => state.files.reduce((sum, file) => sum + file.size, 0);
 
 const $ = (selector, scope = document) => scope.querySelector(selector);
 const $$ = (selector, scope = document) => [...scope.querySelectorAll(selector)];
@@ -219,6 +231,10 @@ function openWorkspace(tool) {
   $("#ws-desc").textContent = tool.desc;
   $("#ws-icon").innerHTML = ICONS[tool.icon] || ICONS.file;
   $("#ws-accept-hint").textContent = `الصيغ المقبولة: ${tool.accept}`;
+  const engineHint = $("#ws-engine-hint");
+  engineHint.textContent = isServerOp(tool)
+    ? `تعمل على الخادم — الحد ${(SERVER_LIMIT / 1024 / 1024).toFixed(1)} ميجابايت للطلب`
+    : "تعمل داخل متصفحك — ملفاتك لا تُرفع لأي خادم وبلا حد للحجم";
   $("#ws-input").accept = tool.accept;
   $("#ws-input").multiple = Boolean(tool.multiple);
   $("#ws-input").value = "";
@@ -296,11 +312,15 @@ function addFiles(fileList) {
   if (!tool) return;
   const incoming = [...fileList];
   for (const file of incoming) {
-    if (file.size > 22 * 1024 * 1024) {
-      toast(`الملف ${file.name} أكبر من 22 ميجابايت`);
+    if (file.size > HARD_LIMIT) {
+      toast(`الملف ${file.name} أكبر من ${Math.round(HARD_LIMIT / 1024 / 1024)} ميجابايت`);
       continue;
     }
     state.files.push(file);
+  }
+  const size = totalSize();
+  if (isServerOp(tool) && size > SERVER_LIMIT) {
+    toast(`تنبيه: هذه الأداة تعمل على الخادم وحد الطلب ${(SERVER_LIMIT / 1024 / 1024).toFixed(1)} ميجابايت — اضغط الملف أولاً`);
   }
   if (!tool.multiple && state.files.length > 1) state.files = [state.files[state.files.length - 1]];
   if (tool.id === "pdf:merge" && state.files.length > 12) state.files = state.files.slice(0, 12);
@@ -310,6 +330,22 @@ function addFiles(fileList) {
 function renderFiles() {
   const list = $("#ws-files");
   list.innerHTML = "";
+  const size = totalSize();
+  const summary = $("#ws-files-summary");
+  if (summary) {
+    summary.textContent = state.files.length
+      ? `${state.files.length} ملف · الحجم الكلي ${humanSize(size)}`
+      : "";
+    summary.hidden = !state.files.length;
+  }
+  const warning = $("#ws-limit-warning");
+  if (warning) {
+    const over = isServerOp(state.tool) && size > SERVER_LIMIT;
+    warning.hidden = !over;
+    if (over) {
+      warning.textContent = `الحجم الكلي ${(size / 1024 / 1024).toFixed(1)} ميجابايت — سيرفضه الخادم (الحد ${(SERVER_LIMIT / 1024 / 1024).toFixed(1)} ميجابايت). استخدم «ضغط PDF» أولاً.`;
+    }
+  }
   state.files.forEach((file, index) => {
     const li = document.createElement("li");
     li.innerHTML = `
@@ -327,77 +363,147 @@ function renderFiles() {
 
 /* -------------------------------- run --------------------------------- */
 
+function setProgress(percent, label) {
+  const bar = $("#ws-bar");
+  const text = $("#ws-progress-label");
+  bar.style.width = `${Math.min(100, Math.max(2, percent))}%`;
+  if (text) text.textContent = label ? `${label}… ${Math.round(percent)}%` : `${Math.round(percent)}%`;
+}
+
+function fail(message) {
+  const errorBox = $("#ws-error");
+  errorBox.textContent = message;
+  errorBox.hidden = false;
+  $("#ws-progress").hidden = true;
+}
+
 async function runTool() {
   const tool = state.tool;
   if (!tool || state.busy) return;
-  const errorBox = $("#ws-error");
-  errorBox.hidden = true;
+  $("#ws-error").hidden = true;
 
-  if (!state.files.length) {
-    errorBox.textContent = "أضف ملفاً واحداً على الأقل أولاً.";
-    errorBox.hidden = false;
-    return;
-  }
+  if (!state.files.length) return fail("أضف ملفاً واحداً على الأقل أولاً.");
   if (tool.minFiles && state.files.length < tool.minFiles) {
-    errorBox.textContent = `هذه الأداة تحتاج ${tool.minFiles} ملفات على الأقل.`;
-    errorBox.hidden = false;
-    return;
+    return fail(`هذه الأداة تحتاج ${tool.minFiles} ملفات على الأقل.`);
   }
 
   const options = collectOptions();
-  if (tool.id === "pdf:split" && options.mode === "ranges" && !options.ranges) {
-    errorBox.textContent = "اكتب نطاق الصفحات، مثال: 1-3,5";
-    errorBox.hidden = false;
-    return;
+  if (tool.id === "pdf:split" && (options.mode || "ranges") === "ranges" && !options.ranges) {
+    return fail("اكتب نطاق الصفحات، مثال: 1-3,5");
   }
   if (tool.id === "pdf:organize" && !options.order) {
-    errorBox.textContent = "اكتب ترتيب الصفحات، مثال: 2,1,3";
-    errorBox.hidden = false;
-    return;
+    return fail("اكتب ترتيب الصفحات، مثال: 2,1,3");
+  }
+  const imagesOnlyCheck = state.files.every((file) => /^image\//.test(file.type) || /\.(jpe?g|png|webp|gif|bmp|svg|avif)$/i.test(file.name));
+  if (isServerOp(tool) && !imagesOnlyCheck && totalSize() > SERVER_LIMIT) {
+    return fail(
+      `هذه الأداة تحتاج الخادم، والحد الأقصى للطلب على الخادم ${(SERVER_LIMIT / 1024 / 1024).toFixed(1)} ميجابايت `
+      + `(حجم ملفاتك ${(totalSize() / 1024 / 1024).toFixed(1)} ميجابايت). `
+      + "اضغط الملف أولاً (أداة ضغط PDF) أو أرسل جزءاً أصغر. أدوات PDF الأخرى تعمل داخل متصفحك بلا حد.",
+    );
   }
 
   state.busy = true;
+  state.cancelled = false;
   const runBtn = $("#ws-run");
   runBtn.disabled = true;
   runBtn.textContent = "جارٍ التنفيذ…";
   $("#ws-progress").hidden = false;
-  $("#ws-bar").style.width = "12%";
+  $("#ws-progress-label").hidden = false;
   $("#ws-result").hidden = true;
+  setProgress(3, "بدء المعالجة");
 
   const started = performance.now();
   try {
-    const form = new FormData();
-    form.append("op", tool.id);
-    form.append("options", JSON.stringify(options));
-    state.files.forEach((file) => form.append("file", file, file.name));
-
-    const response = await fetch("/api/convert", { method: "POST", body: form });
-    $("#ws-bar").style.width = "70%";
-
-    if (!response.ok && response.headers.get("content-type")?.includes("application/json")) {
-      const payload = await response.json();
-      throw new Error(payload.error || `فشل الطلب (${response.status})`);
+    let output = null;
+    const imagesOnly = state.files.length > 0 && state.files.every((file) => /^image\//.test(file.type) || /\.(jpe?g|png|webp|gif|bmp|svg|avif)$/i.test(file.name));
+    if (isServerOp(tool) && imagesOnly) {
+      // images never need the server (and never hit its payload limit)
+      output = await runInBrowser("img:to-pdf", options);
+    } else if (isServerOp(tool)) {
+      output = await runOnServer(tool.id, options);
+    } else {
+      output = await runInBrowser(tool.id, options);
     }
-    if (!response.ok) throw new Error(`فشل الطلب (${response.status})`);
-
-    const blob = await response.blob();
-    const name = decodeURIComponent(response.headers.get("x-output-name") || "output");
-    const infoHeader = response.headers.get("x-result-info");
-    const info = infoHeader ? JSON.parse(decodeURIComponent(infoHeader)) : {};
-    $("#ws-bar").style.width = "100%";
-    showResult({ blob, name, info, ms: Math.round(performance.now() - started) });
+    setProgress(100, "تم");
+    showResult({
+      blob: output.blob,
+      name: output.name,
+      info: output.info || {},
+      engine: output.engine,
+      ms: Math.round(performance.now() - started),
+    });
   } catch (error) {
-    errorBox.textContent = error.message || "حدث خطأ غير متوقع";
-    errorBox.hidden = false;
-    $("#ws-progress").hidden = true;
+    if (state.cancelled) {
+      fail("تم إلغاء العملية.");
+    } else {
+      fail(error.message || "حدث خطأ غير متوقع");
+    }
   } finally {
     state.busy = false;
     runBtn.disabled = false;
     runBtn.textContent = "تشغيل الأداة";
+    $("#ws-progress-label").hidden = true;
   }
 }
 
-function showResult({ blob, name, info, ms }) {
+async function runInBrowser(op, options) {
+  setProgress(6, "تحميل محرك المعالجة");
+  const engine = await import("./engine/index.js");
+  return engine.runLocally(op, state.files, options, (percent, label) => {
+    setProgress(Math.max(6, percent), label);
+  });
+}
+
+async function runOnServer(op, options) {
+  const form = new FormData();
+  form.append("op", op);
+  form.append("options", JSON.stringify(options));
+  state.files.forEach((file) => form.append("file", file, file.name));
+
+  setProgress(15, "جارٍ الرفع إلى الخادم");
+  const controller = new AbortController();
+  state.abort = controller;
+  const ticker = setInterval(() => {
+    const bar = $("#ws-bar");
+    const current = parseFloat(bar.style.width) || 15;
+    if (current < 60) setProgress(current + 1.5, "جارٍ الرفع والمعالجة");
+  }, 600);
+
+  let response;
+  try {
+    response = await fetch("/api/convert", { method: "POST", body: form, signal: controller.signal });
+  } finally {
+    clearInterval(ticker);
+  }
+
+  if (response.status === 413) {
+    throw new Error(
+      `الخادم رفض الطلب لأن حجمه أكبر من الحد المسموح (4.5 ميجابايت). `
+      + "استخدم أداة «ضغط PDF» أولاً، أو استخدم أدوات PDF الأخرى التي تعمل داخل متصفحك بلا حد للحجم.",
+    );
+  }
+  if (response.status === 504) {
+    throw new Error("انتهت مهلة المعالجة على الخادم (الملف كبير أو الصفحات كثيرة). جرّب تقليله إلى أجزاء أصغر.");
+  }
+  if (!response.ok) {
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const payload = await response.json();
+      throw new Error(payload.error || `فشل الطلب (${response.status})`);
+    }
+    throw new Error(`فشل الطلب (${response.status})`);
+  }
+
+  setProgress(85, "جارٍ تنزيل الناتج");
+  const blob = await response.blob();
+  const name = decodeURIComponent(response.headers.get("x-output-name") || "output");
+  const infoHeader = response.headers.get("x-result-info");
+  const info = infoHeader ? JSON.parse(decodeURIComponent(infoHeader)) : {};
+  return { blob, name, info: { ...info, engine: "server" }, engine: "server" };
+}
+
+function showResult({ blob, name, info, ms, engine }) {
   const box = $("#ws-result");
   box.innerHTML = "";
   box.hidden = false;
@@ -409,7 +515,9 @@ function showResult({ blob, name, info, ms }) {
 
   const meta = document.createElement("p");
   meta.className = "meta";
-  const bits = [`الحجم: ${humanSize(blob.size)}`, `الزمن: ${ms} مللي ثانية`];
+  const bits = [`الحجم: ${humanSize(blob.size)}`, `الزمن: ${(ms / 1000).toFixed(1)} ثانية`];
+  if (engine === "browser") bits.push("تمت المعالجة داخل متصفحك — لم يُرفع الملف");
+  if (engine === "server") bits.push("تمت المعالجة على الخادم");
   if (info.pages) bits.push(`الصفحات: ${info.pages}`);
   if (info.slides) bits.push(`الشرائح: ${info.slides}`);
   if (info.savedPercent !== undefined && info.savedPercent > 0) {
@@ -612,6 +720,11 @@ function wire() {
   });
   $("#ws-input").addEventListener("change", (event) => addFiles(event.target.files));
   $("#ws-run").addEventListener("click", runTool);
+  $("#ws-cancel").addEventListener("click", () => {
+    state.cancelled = true;
+    if (state.abort) state.abort.abort();
+    toast("جارٍ الإلغاء…");
+  });
   $("#ws-reset").addEventListener("click", () => {
     state.files = [];
     renderFiles();

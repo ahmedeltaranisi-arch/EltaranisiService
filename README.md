@@ -24,6 +24,17 @@
 ### تحويل الصيغ
 `to-pdf` (Word/Excel/PowerPoint/نص/CSV/HTML/صور ← PDF)، `docx:to-pdf`، `xlsx:to-pdf`، `pptx:to-pdf`، `img:to-pdf`، `img:convert`، `csv:to-xlsx`، `xlsx:to-csv`، `docx:to-txt`، `pptx:to-jpg`.
 
+## محرك مزدوج: المتصفح أولاً، والخادم عند الحاجة
+
+| النوع | أين يعمل | أمثلة | الحد الأقصى |
+| --- | --- | --- | --- |
+| أدوات PDF والصور | **داخل المتصفح** (pdf-lib + pdf.js + canvas + docx/xlsx/pptxgenjs) | دمج، تقسيم، ضغط، تدوير، ترتيب، علامة مائية، ترقيم، PDF ← Word/Excel/PowerPoint/JPG/PNG/نص، صور ← PDF، تحويل الصور | لا يوجد حد عملي (الملف لا يُرفع إطلاقاً) |
+| تحويل Office/HTML/نص ← PDF | **على الخادم** (Chromium headless) | Word، Excel، PowerPoint، CSV، HTML، TXT ← PDF | 4.4 ميجابايت للطلب (حد Vercel) |
+
+سبب هذا التصميم: Vercel يرفض أي طلب أكبر من 4.5 ميجابايت برمز **413** قبل وصوله للكود.
+لذلك كل أدوات PDF تعمل محلياً في المتصفح (أسرع + خصوصية أعلى + بلا حد)، ورسالة واضحة تظهر
+إذا تجاوز ملف Office الحد في الأدوات التي تحتاج الخادم.
+
 ## كيف يعمل
 - **الواجهة**: HTML/CSS/JS خفيف يُبنى بـ Vite إلى `dist/`.
 - **المحرك**: دالة Vercel واحدة `api/convert.mjs` (Node 20/24) تستقبل multipart وتُرجع الملف الناتج مباشرة.

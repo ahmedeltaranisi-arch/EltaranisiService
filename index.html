@@ -43,7 +43,7 @@
         <div class="drop-zone" id="quick-drop">
           <svg viewBox="0 0 24 24" class="drop-icon" aria-hidden="true"><path d="M12 16V4m0 0 4.5 4.5M12 4 7.5 8.5" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v3.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg>
           <p class="drop-title">اسحب ملفاتك هنا أو اضغط للاختيار</p>
-          <p class="drop-hint">PDF، Word، Excel، PowerPoint، صور، نصوص — حتى 22 ميجابايت للملف</p>
+          <p class="drop-hint">PDF، Word، Excel، PowerPoint، صور، نصوص — تُعالَج داخل متصفحك بلا حد للحجم</p>
           <input type="file" id="quick-input" multiple hidden>
         </div>
 
@@ -117,15 +117,22 @@
           <input type="file" id="ws-input" multiple hidden>
           <p><strong>أضف ملفاتك</strong> — اسحب وأفلت أو اضغط</p>
           <p class="muted" id="ws-accept-hint"></p>
+          <p class="engine-hint" id="ws-engine-hint"></p>
         </div>
+        <p class="files-summary" id="ws-files-summary" hidden></p>
         <ul class="file-list" id="ws-files"></ul>
+        <p class="limit-warning" id="ws-limit-warning" hidden></p>
         <div class="options" id="ws-options"></div>
         <p class="ws-error" id="ws-error" hidden></p>
         <div class="ws-actions">
           <button class="primary-btn" id="ws-run" type="button">تشغيل الأداة</button>
+          <button class="ghost-btn" id="ws-cancel" type="button">إلغاء</button>
           <button class="ghost-btn" id="ws-reset" type="button">إفراغ</button>
         </div>
-        <div class="progress" id="ws-progress" hidden><div class="bar" id="ws-bar"></div></div>
+        <div class="progress" id="ws-progress" hidden>
+          <div class="bar" id="ws-bar"></div>
+        </div>
+        <p class="progress-label" id="ws-progress-label" hidden></p>
         <div class="result" id="ws-result" hidden></div>
       </div>
     </div>
