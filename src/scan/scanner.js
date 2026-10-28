@@ -93,6 +93,12 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
   const contrastInput = document.getElementById("scanner-contrast");
   const brightnessValue = document.getElementById("scanner-brightness-value");
   const contrastValue = document.getElementById("scanner-contrast-value");
+  const previewModal = document.getElementById("scan-preview");
+  const previewCanvas = document.getElementById("scan-preview-canvas");
+  const previewMeta = document.getElementById("scan-preview-meta");
+  const cameraModal = document.getElementById("scan-camera");
+  const cameraVideo = document.getElementById("scan-camera-video");
+  const cameraMsg = document.getElementById("scan-camera-msg");
   const history = []; // undo stack (canvas + quad + filter + adjust snapshots)
 
   const state = {
@@ -193,12 +199,19 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
           name: file.name,
           canvas,
           quad: detection.quad || defaultQuad(1, 1),
+          autoQuad: detection.quad ? detection.quad.map((point) => ({ ...point })) : defaultQuad(1, 1),
           autoDetected: Boolean(detection.quad),
           confidence: detection.confidence || 0,
           filter: "original",
           adjust: { brightness: 0, contrast: 0 },
           perspective: true,
         };
+        const light = analyseLighting(page);
+        if (light < 82) {
+          // weak lighting: "No Shadow" flattens the illumination before the user asks
+          page.filter = "noshadow";
+          page.lowLight = true;
+        }
         state.pages.push(page);
         state.activeId = page.id;
       } catch (error) {
@@ -211,6 +224,8 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     drawStage();
     refreshFilterThumbs();
     updateCount();
+    const dark = state.pages.filter((page) => page.lowLight).length;
+    if (dark) onToast(`إضاءة منخفضة في ${dark} صفحة — طُبّق فلتر No Shadow تلقائياً`);
   }
 
   function updateCount() {
@@ -221,7 +236,8 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     if (filtersStrip) filtersStrip.classList.toggle("empty", !hasPages);
     ["scanner-export-pdf", "scanner-export-images", "scanner-rotate-left", "scanner-rotate-right",
       "scanner-flip", "scanner-crop-all", "scanner-detect", "scanner-page-delete",
-      "scanner-export-zip", "scanner-detect-all", "scanner-rotate-all", "scanner-adjust-reset"].forEach((id) => {
+      "scanner-export-zip", "scanner-detect-all", "scanner-rotate-all", "scanner-adjust-reset",
+      "scanner-scan", "scanner-reset", "scanner-confirm", "scanner-save"].forEach((id) => {
       const node = document.getElementById(id);
       if (node) node.disabled = !hasPages;
     });
@@ -296,6 +312,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
         canvas: page.canvas,
         autoDetected: page.autoDetected,
         confidence: page.confidence,
+        autoQuad: page.autoQuad ? page.autoQuad.map((point) => ({ ...point })) : null,
       })),
       activeId: state.activeId,
     });
@@ -319,6 +336,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
       current.canvas = snapshotPage.canvas;
       current.autoDetected = snapshotPage.autoDetected;
       current.confidence = snapshotPage.confidence;
+      current.autoQuad = snapshotPage.autoQuad;
       return current;
     });
     state.activeId = entry.activeId;
@@ -353,6 +371,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
       const detection = detectQuadDetailed(page.canvas);
       if (detection.quad) {
         page.quad = detection.quad;
+        page.autoQuad = detection.quad.map((point) => ({ ...point }));
         page.autoDetected = true;
         page.confidence = detection.confidence;
         worked += 1;
@@ -412,6 +431,168 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     if (contrastValue) contrastValue.textContent = String(page.adjust.contrast || 0);
     drawStage();
     renderPageList();
+  }
+
+
+  /* --------------------------- primary actions ---------------------------- */
+
+  function resetPage() {
+    const page = activePage();
+    if (!page) return;
+    snapshot("إعادة ضبط الصفحة");
+    page.quad = (page.autoQuad || defaultQuad(1, 1)).map((point) => ({ ...point }));
+    page.autoDetected = Boolean(page.autoQuad);
+    page.confidence = page.autoQuad ? page.confidence || 0 : 0;
+    page.filter = page.lowLight ? "noshadow" : "original";
+    page.adjust = { brightness: 0, contrast: 0 };
+    refreshFilters();
+    syncAdjustControls();
+    drawStage();
+    refreshFilterThumbs();
+    renderPageList();
+    onToast(page.autoDetected
+      ? "تمت إعادة ضبط الزوايا إلى الاكتشاف التلقائي وإرجاع الفلاتر"
+      : "تمت إعادة ضبط الزوايا والفلاتر — اضغط «مسح» لاكتشاف الحدود");
+  }
+
+  /** Bakes the perspective crop into the page (auto-crop) — undoable. */
+  function confirmCrop() {
+    const page = activePage();
+    if (!page) return;
+    snapshot("تأكيد القص");
+    try {
+      const native = Math.max(page.canvas.width, page.canvas.height);
+      const cropped = renderPageCanvas(page, { maxSize: native, raw: true });
+      page.canvas = cropped;
+      page.quad = defaultQuad(1, 1);
+      page.autoDetected = false;
+      page.confirmed = true;
+      drawStage();
+      refreshFilterThumbs();
+      renderPageList();
+      updateCount();
+      openPreview();
+      onToast("تم قص المستند وتصحيح الميل — راجع المعاينة قبل الحفظ");
+    } catch (error) {
+      onToast(`تعذر القص: ${error.message}`);
+    }
+  }
+
+  /** Low-light / messy background hint after a page is analysed. */
+  function analyseLighting(page) {
+    try {
+      const probe = document.createElement("canvas");
+      probe.width = 60;
+      probe.height = Math.max(1, Math.round((60 * page.canvas.height) / page.canvas.width));
+      const ctx = probe.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(page.canvas, 0, 0, probe.width, probe.height);
+      const data = ctx.getImageData(0, 0, probe.width, probe.height).data;
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      const mean = sum / (data.length / 4);
+      page.meanLight = mean;
+      return mean;
+    } catch {
+      return 255;
+    }
+  }
+
+  /* ------------------------- preview before saving ------------------------ */
+
+  let previewIndex = 0;
+
+  function renderPreview(index) {
+    const pages = state.pages;
+    if (!pages.length || !previewCanvas) return;
+    previewIndex = Math.max(0, Math.min(pages.length - 1, index));
+    const page = pages[previewIndex];
+    state.activeId = page.id;
+    const rendered = renderPageCanvas(page, { upscale: 1 });
+    previewCanvas.width = rendered.width;
+    previewCanvas.height = rendered.height;
+    previewCanvas.getContext("2d").drawImage(rendered, 0, 0);
+    const filter = FILTERS.find((item) => item.id === (page.filter || "original"));
+    if (previewMeta) {
+      previewMeta.textContent = `صفحة ${previewIndex + 1} من ${pages.length} · ${rendered.width}×${rendered.height} · ${filter ? filter.label : "Original"}`;
+    }
+    const prev = document.getElementById("scan-preview-prev");
+    const next = document.getElementById("scan-preview-next");
+    if (prev) prev.disabled = previewIndex === 0;
+    if (next) next.disabled = previewIndex === pages.length - 1;
+  }
+
+  function openPreview(index = null) {
+    if (!previewModal || !state.pages.length) return;
+    previewModal.hidden = false;
+    renderPreview(index === null ? Math.max(0, state.pages.findIndex((page) => page.id === state.activeId)) : index);
+  }
+
+  function closePreview() {
+    if (previewModal) previewModal.hidden = true;
+  }
+
+  /* ------------------------------- camera -------------------------------- */
+
+  let cameraStream = null;
+  let cameraFacing = "environment";
+
+  async function openCamera() {
+    if (!cameraModal || !cameraVideo) return;
+    cameraModal.hidden = false;
+    await startCamera();
+  }
+
+  async function startCamera() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      if (cameraMsg) { cameraMsg.hidden = false; cameraMsg.textContent = "المتصفح لا يدعم الكاميرا — استخدم «إضافة صور» من الجهاز."; }
+      return;
+    }
+    stopCamera();
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: cameraFacing }, width: { ideal: 2560 }, height: { ideal: 1440 } },
+        audio: false,
+      });
+      cameraVideo.srcObject = cameraStream;
+      if (cameraMsg) cameraMsg.hidden = true;
+      await cameraVideo.play().catch(() => {});
+    } catch (error) {
+      if (cameraMsg) {
+        cameraMsg.hidden = false;
+        cameraMsg.textContent = `تعذر فتح الكاميرا (${error.name}). تأكد من السماح بالوصول أو استخدم «إضافة صور».`;
+      }
+    }
+  }
+
+  function stopCamera() {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => track.stop());
+      cameraStream = null;
+    }
+    if (cameraVideo) cameraVideo.srcObject = null;
+  }
+
+  function closeCamera() {
+    stopCamera();
+    if (cameraModal) cameraModal.hidden = true;
+  }
+
+  async function capturePhoto() {
+    if (!cameraVideo || !cameraVideo.videoWidth) {
+      onToast("الكاميرا لم تجهز بعد — انتظر لحظة ثم أعد المحاولة");
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = cameraVideo.videoWidth;
+    canvas.height = cameraVideo.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(cameraVideo, 0, 0);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    closeCamera();
+    if (!blob) return;
+    const file = new File([blob], `camera-${Date.now()}.jpg`, { type: "image/jpeg" });
+    await addFiles([file]);
+    onToast("تم التقاط الصورة — جارٍ اكتشاف الحدود");
   }
 
   /* ------------------------------ crop canvas ----------------------------- */
@@ -530,11 +711,15 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     const target = event.target;
     if (!target.dataset || target.dataset.index === undefined) return;
     dragIndex = Number(target.dataset.index);
-    overlay.setPointerCapture(event.pointerId);
+    try {
+      overlay.setPointerCapture(event.pointerId);
+    } catch {
+      /* synthetic or interrupted pointer: document-level listeners still drive the drag */
+    }
     event.preventDefault();
   });
 
-  overlay.addEventListener("pointermove", (event) => {
+  const moveDrag = (event) => {
     if (dragIndex === null) return;
     const page = activePage();
     if (!page) return;
@@ -542,7 +727,9 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     page.quad[dragIndex] = point;
     page.autoDetected = false;
     drawOverlay();
-  });
+  };
+  overlay.addEventListener("pointermove", moveDrag);
+  document.addEventListener("pointermove", moveDrag);
 
   const endDrag = (event) => {
     if (dragIndex === null) return;
@@ -555,6 +742,8 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
   };
   overlay.addEventListener("pointerup", endDrag);
   overlay.addEventListener("pointercancel", endDrag);
+  document.addEventListener("pointerup", endDrag);
+  document.addEventListener("pointercancel", endDrag);
 
   /* -------------------------------- actions ------------------------------- */
 
@@ -601,6 +790,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
         return;
       }
       page.quad = detection.quad;
+      page.autoQuad = detection.quad.map((point) => ({ ...point }));
       page.autoDetected = true;
       page.confidence = detection.confidence;
       drawStage();
@@ -858,6 +1048,24 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
   document.getElementById("scanner-flip").addEventListener("click", flip);
   document.getElementById("scanner-crop-all").addEventListener("click", cropAll);
   document.getElementById("scanner-detect").addEventListener("click", autoDetect);
+  document.getElementById("scanner-scan").addEventListener("click", autoDetect);
+  document.getElementById("scanner-reset").addEventListener("click", resetPage);
+  document.getElementById("scanner-confirm").addEventListener("click", confirmCrop);
+  document.getElementById("scanner-save").addEventListener("click", () => openPreview());
+  document.getElementById("scan-preview-close").addEventListener("click", closePreview);
+  document.getElementById("scan-preview-edit").addEventListener("click", closePreview);
+  document.getElementById("scan-preview-prev").addEventListener("click", () => renderPreview(previewIndex - 1));
+  document.getElementById("scan-preview-next").addEventListener("click", () => renderPreview(previewIndex + 1));
+  document.getElementById("scan-preview-pdf").addEventListener("click", () => { closePreview(); exportPdf(); });
+  document.getElementById("scan-preview-images").addEventListener("click", () => { closePreview(); exportImages(); });
+  const cameraButtons = ["scanner-camera", "scanner-camera-top"].map((id) => document.getElementById(id)).filter(Boolean);
+  cameraButtons.forEach((button) => button.addEventListener("click", openCamera));
+  document.getElementById("scan-camera-close").addEventListener("click", closeCamera);
+  document.getElementById("scan-camera-shot").addEventListener("click", capturePhoto);
+  document.getElementById("scan-camera-switch").addEventListener("click", async () => {
+    cameraFacing = cameraFacing === "environment" ? "user" : "environment";
+    await startCamera();
+  });
   document.getElementById("scanner-detect-all").addEventListener("click", detectAll);
   document.getElementById("scanner-rotate-all").addEventListener("click", rotateAll);
   document.getElementById("scanner-undo").addEventListener("click", undo);
@@ -961,6 +1169,14 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     historyDepth: () => history.length,
     autoDetect,
     detectAll,
+    resetPage,
+    confirmCrop,
+    openPreview,
+    closePreview,
+    renderPreview,
+    openCamera,
+    capturePhoto,
+    closeCamera,
     rotateAll,
     undo,
     movePage,

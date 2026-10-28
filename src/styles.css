@@ -439,17 +439,9 @@ body.scanner-open { overflow: hidden; }
 .crop-frame { position: relative; display: block; line-height: 0; border-radius: 12px; box-shadow: 0 18px 40px rgba(0,0,0,0.45); }
 #crop-canvas { width: 100%; height: 100%; display: block; border-radius: 12px; background: #fff; }
 .crop-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
-.crop-shape { fill: rgba(139,116,255,0.14); stroke: none; }
-.crop-edge { stroke: #a48dff; stroke-width: 2; vector-effect: non-scaling-stroke; }
 .crop-handle {
-  fill: #ffffff;
-  stroke: #7a5cf0;
-  stroke-width: 3;
   pointer-events: all;
-  cursor: grab;
-  vector-effect: non-scaling-stroke;
 }
-.crop-handle:active { cursor: grabbing; }
 
 .stage-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .scanner-caption { display: flex; justify-content: space-between; gap: 10px; font-size: 11.5px; color: #9aa0bd; padding: 0 2px; }
@@ -622,4 +614,77 @@ body.scanner-open { overflow: hidden; }
   .filter-name { font-size: 10.5px; }
   .filter-ar { font-size: 9.5px; }
   .scanner-hint { font-size: 10.5px; }
+}
+
+/* ---- document boundary overlay (green, CamScanner style) ---- */
+.crop-shape { fill: rgba(34,197,94,0.16); stroke: none; }
+.crop-edge {
+  stroke: #22c55e;
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 3px rgba(34,197,94,0.85));
+}
+.crop-handle {
+  fill: #22c55e;
+  stroke: #ffffff;
+  stroke-width: 3;
+  cursor: grab;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.45));
+}
+.crop-handle:active { cursor: grabbing; }
+.crop-overlay { touch-action: none; }
+.crop-canvas, #crop-canvas { touch-action: none; }
+
+/* ---- main actions (مسح / إعادة ضبط / تأكيد / حفظ) ---- */
+.scan-main-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
+.scan-main-actions .primary-btn, .scan-main-actions .ghost-btn { min-width: 92px; justify-content: center; }
+.primary-btn.warm { background: linear-gradient(135deg, #22c55e, #16a34a); }
+.ghost-btn.accent { border-color: rgba(34,197,94,0.75); color: #4ade80; background: rgba(34,197,94,0.10); }
+.ghost-btn.accent:hover:not(:disabled) { background: rgba(34,197,94,0.2); }
+.primary-btn.warm:hover { filter: brightness(1.07); }
+
+/* ---- preview before saving ---- */
+.scan-preview, .scan-camera {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 4, 20, 0.82); backdrop-filter: blur(6px);
+  padding: 16px;
+}
+.scan-preview[hidden], .scan-camera[hidden] { display: none; }
+.scan-preview-panel, .scan-camera-panel {
+  width: min(980px, 100%); max-height: 92vh; display: flex; flex-direction: column;
+  background: #14112b; border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; overflow: hidden;
+}
+.scan-preview-head, .scan-camera-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.scan-preview-head strong, .scan-camera-head strong { display: block; font-size: 14px; }
+.scan-preview-head .muted { font-size: 11.5px; }
+.scan-preview-body { display: flex; align-items: center; gap: 10px; padding: 12px 16px; overflow: auto; }
+.scan-preview-body canvas {
+  flex: 1; min-width: 0; max-height: 62vh; object-fit: contain;
+  background: #0b0918; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);
+}
+.scan-preview-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.08);
+}
+.scan-preview-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ---- camera ---- */
+.scan-camera-stage { position: relative; background: #000; display: flex; align-items: center; justify-content: center; min-height: 240px; }
+.scan-camera-stage video { width: 100%; max-height: 62vh; object-fit: contain; background: #000; }
+.scan-camera-msg { position: absolute; inset: auto 12px 12px 12px; text-align: center; background: rgba(0,0,0,0.6); padding: 8px 12px; border-radius: 8px; font-size: 12px; }
+.scan-camera-foot { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.08); }
+
+@media (max-width: 760px) {
+  .scan-main-actions { gap: 6px; }
+  .scan-main-actions .primary-btn, .scan-main-actions .ghost-btn { min-width: 74px; font-size: 12px; padding: 8px 10px; }
+  .scan-preview-body { padding: 8px; gap: 6px; }
+  .scan-preview-body canvas { max-height: 52vh; }
+  .scan-preview-foot { flex-direction: column; align-items: stretch; }
+  .scan-preview-actions { justify-content: space-between; }
+  .crop-handle { r: 13; }
 }

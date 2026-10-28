@@ -153,6 +153,7 @@
       </div>
       <div class="scanner-actions">
         <button class="ghost-btn" id="scanner-add" type="button">+ إضافة صور</button>
+        <button class="ghost-btn" id="scanner-camera-top" type="button" title="التقاط صورة بالكاميرا">📷 كاميرا</button>
         <button class="primary-btn small" id="scanner-export-pdf" type="button" disabled>حفظ PDF</button>
         <button class="ghost-btn" id="scanner-export-images" type="button" disabled>حفظ الصور</button>
         <button class="ghost-btn" id="scanner-export-zip" type="button" disabled title="كل الصور داخل ملف ZIP واحد">ZIP</button>
@@ -171,6 +172,7 @@
           <div class="scanner-drop" id="scanner-drop">
             <p><strong>أضف صور المستندات</strong></p>
             <p class="muted">صوّر الورقة بالهاتف ثم ارفعها هنا — اسحب وأفلت أو اضغط</p>
+            <button class="ghost-btn small" id="scanner-camera" type="button">📷 التقاط بالكاميرا</button>
             <p class="muted small">JPG · PNG · WebP — عدة صفحات مدعومة</p>
           </div>
         </div>
@@ -181,6 +183,13 @@
             <canvas id="crop-canvas"></canvas>
             <svg class="crop-overlay" id="crop-overlay" xmlns="http://www.w3.org/2000/svg"></svg>
           </div>
+        </div>
+
+        <div class="scan-main-actions" id="scan-main-actions">
+          <button class="primary-btn" id="scanner-scan" type="button" disabled title="تحليل الصورة واكتشاف الزوايا الأربع">🔍 مسح</button>
+          <button class="ghost-btn" id="scanner-reset" type="button" disabled title="إرجاع الزوايا والفلتر لحالتها الأصلية">↺ إعادة ضبط</button>
+          <button class="ghost-btn accent" id="scanner-confirm" type="button" disabled title="تثبيت القص وتصحيح الميل والمنظور">✓ تأكيد</button>
+          <button class="primary-btn warm" id="scanner-save" type="button" disabled title="معاينة النتيجة قبل الحفظ">💾 حفظ</button>
         </div>
 
         <div class="stage-tools">
@@ -226,6 +235,48 @@
         <p class="scanner-status" id="scanner-status" hidden></p>
         <p class="scanner-hint">اسحب الزوايا الأربع لتحديد حدود الورقة — سيُصحَّح الميل والمنظور تلقائياً عند الحفظ.</p>
       </section>
+    </div>
+
+    <div class="scan-preview" id="scan-preview" hidden>
+      <div class="scan-preview-panel">
+        <header class="scan-preview-head">
+          <div>
+            <strong>معاينة النتيجة قبل الحفظ</strong>
+            <span class="muted" id="scan-preview-meta"></span>
+          </div>
+          <button class="icon-btn" id="scan-preview-close" type="button" aria-label="إغلاق">✕</button>
+        </header>
+        <div class="scan-preview-body">
+          <button class="ghost-btn small" id="scan-preview-prev" type="button" aria-label="السابق">‹</button>
+          <canvas id="scan-preview-canvas"></canvas>
+          <button class="ghost-btn small" id="scan-preview-next" type="button" aria-label="التالي">›</button>
+        </div>
+        <footer class="scan-preview-foot">
+          <span class="muted small" id="scan-preview-hint">هذه هي النتيجة النهائية بعد تصحيح الميل والفلاتر</span>
+          <div class="scan-preview-actions">
+            <button class="ghost-btn small" id="scan-preview-edit" type="button">↩ متابعة التعديل</button>
+            <button class="ghost-btn small" id="scan-preview-images" type="button">حفظ الصور</button>
+            <button class="primary-btn small" id="scan-preview-pdf" type="button">حفظ PDF</button>
+          </div>
+        </footer>
+      </div>
+    </div>
+
+    <div class="scan-camera" id="scan-camera" hidden>
+      <div class="scan-camera-panel">
+        <header class="scan-camera-head">
+          <strong>التقاط صورة بالكاميرا</strong>
+          <button class="icon-btn" id="scan-camera-close" type="button" aria-label="إغلاق">✕</button>
+        </header>
+        <div class="scan-camera-stage">
+          <video id="scan-camera-video" playsinline muted autoplay></video>
+          <p class="scan-camera-msg muted" id="scan-camera-msg" hidden></p>
+        </div>
+        <footer class="scan-camera-foot">
+          <button class="primary-btn" id="scan-camera-shot" type="button">📸 التقاط</button>
+          <button class="ghost-btn small" id="scan-camera-switch" type="button">تبديل الكاميرا</button>
+        </footer>
+      </div>
     </div>
 
     <div class="scan-viewer" id="scan-viewer" hidden>

@@ -7,15 +7,18 @@ import { warpPerspective, cropRect, quadToRect, isRectangular, rectToQuad } from
 const MAX_SIDE = 2600;
 
 /** Produces the final canvas for one page (crop/perspective + filter). */
-export function renderPageCanvas(page, { maxSize = MAX_SIDE, filterOverride = null } = {}) {
+export function renderPageCanvas(page, { maxSize = MAX_SIDE, filterOverride = null, upscale = 1, raw = false } = {}) {
   const source = page.canvas;
   const quad = page.quad.map((point) => ({ x: point.x * source.width, y: point.y * source.height }));
+  const target = Math.round(maxSize * upscale);
   let cropped;
   if (isRectangular(quad) || page.perspective === false) {
-    cropped = cropRect(source, quadToRect(quad), { maxSize });
+    cropped = cropRect(source, quadToRect(quad), { maxSize: target });
   } else {
-    cropped = warpPerspective(source, quad, { maxSize });
+    cropped = warpPerspective(source, quad, { maxSize: target });
   }
+  // geometry only (used when baking a confirmed crop, so filters are not applied twice)
+  if (raw) return cropped;
   const ctx = cropped.getContext("2d", { willReadFrequently: true });
   const imageData = ctx.getImageData(0, 0, cropped.width, cropped.height);
   applyFilter(imageData, filterOverride || page.filter);

@@ -1214,6 +1214,270 @@ export function paperMaskQuads(gray, width, height, { deltas = [8, 14, 22], radi
   return out;
 }
 
+
+/* ------------------------------ contours ---------------------------------- */
+
+/**
+ * Moore-neighbour boundary tracing (the classic Suzuki-style border following).
+ * Returns closed polygons (arrays of {x,y}) for every blob larger than `minPerimeter`
+ * that has not already been walked.
+ */
+export function traceContours(mask, width, height, { minPerimeter = 60, maxContours = 24 } = {}) {
+  const traced = new Uint8Array(mask.length);
+  const contours = [];
+  const at = (x, y) => (x < 0 || y < 0 || x >= width || y >= height ? 0 : mask[y * width + x]);
+  const DX = [1, 1, 0, -1, -1, -1, 0, 1];
+  const DY = [0, 1, 1, 1, 0, -1, -1, -1];
+
+  for (let y = 1; y < height - 1 && contours.length < maxContours; y += 1) {
+    for (let x = 1; x < width - 1 && contours.length < maxContours; x += 1) {
+      const start = y * width + x;
+      if (!mask[start] || traced[start] || at(x - 1, y)) continue;
+      // start on the left edge of a blob, entering from the left
+      const points = [{ x, y }];
+      let cx = x;
+      let cy = y;
+      let dir = 6; // came from the west
+      let steps = 0;
+      let closed = false;
+      while (steps < width * height * 2) {
+        steps += 1;
+        let found = false;
+        for (let k = 1; k <= 8; k += 1) {
+          const d = (dir + k) % 8;
+          const nx = cx + DX[d];
+          const ny = cy + DY[d];
+          if (at(nx, ny)) {
+            cx = nx;
+            cy = ny;
+            dir = (d + 4) % 8; // backtrack direction
+            points.push({ x: cx, y: cy });
+            traced[ny * width + nx] = 1;
+            found = true;
+            break;
+          }
+        }
+        if (!found) break;
+        if (cx === x && cy === y && points.length > 3) { closed = true; break; }
+      }
+      if (!closed || points.length < minPerimeter) continue;
+      contours.push(points);
+    }
+  }
+  return contours;
+}
+
+/**
+ * Douglas–Peucker simplification. Closed rings (first point == last point) are split
+ * at their farthest point first, otherwise the recursion collapses to two points.
+ */
+export function simplifyPolygon(points, epsilon) {
+  if (!points || points.length < 4) return points ? [...points] : [];
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (Math.hypot(last.x - first.x, last.y - first.y) <= 1.5) {
+    let farIndex = 0;
+    let farDistance = -1;
+    for (let i = 1; i < points.length - 1; i += 1) {
+      const distance = Math.hypot(points[i].x - first.x, points[i].y - first.y);
+      if (distance > farDistance) {
+        farDistance = distance;
+        farIndex = i;
+      }
+    }
+    if (farIndex > 1 && farIndex < points.length - 2) {
+      const head = simplifyPolygon(points.slice(0, farIndex + 1), epsilon);
+      const tail = simplifyPolygon(points.slice(farIndex), epsilon);
+      const merged = [...head.slice(0, -1), ...tail];
+      // the ring closes on itself: drop the duplicated start point
+      if (merged.length > 3) {
+        const a = merged[0];
+        const b = merged[merged.length - 1];
+        if (Math.hypot(b.x - a.x, b.y - a.y) <= Math.max(1.5, epsilon)) merged.pop();
+      }
+      return merged;
+    }
+  }
+  const start = points[0];
+  const end = points[points.length - 1];
+  let index = -1;
+  let maxDistance = 0;
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const point = points[i];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const distance = Math.abs(dy * point.x - dx * point.y + end.x * start.y - end.y * start.x) / length;
+    if (distance > maxDistance) {
+      maxDistance = distance;
+      index = i;
+    }
+  }
+  if (maxDistance <= epsilon || index < 0) return [start, end];
+  const left = simplifyPolygon(points.slice(0, index + 1), epsilon);
+  const right = simplifyPolygon(points.slice(index), epsilon);
+  return [...left.slice(0, -1), ...right];
+}
+
+/** Perimeter of a closed polygon. */
+export function polygonPerimeter(points) {
+  let total = 0;
+  for (let i = 0; i < points.length; i += 1) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    total += Math.hypot(b.x - a.x, b.y - a.y);
+  }
+  return total;
+}
+
+/**
+ * Contour → quad candidates. A document contour simplifies into four long edges;
+ * noisy contours are reduced with the minimum-area rectangle of their convex hull.
+ */
+export function contourQuads(mask, width, height, { minAreaRatio = 0.03, maxQuads = 8 } = {}) {
+  const contours = traceContours(mask, width, height, { maxContours: 18 });
+  const out = [];
+  const frameArea = width * height;
+  for (const contour of contours) {
+    const perimeter = polygonPerimeter(contour);
+    if (perimeter < Math.min(width, height) * 0.5) continue;
+    const simplified = simplifyPolygon(contour, Math.max(2.5, perimeter * 0.02));
+    let quad = null;
+    // 5+ points: if the polygon is very close to a quadrilateral, use its four corners
+    if (simplified.length > 4) {
+      const corners = bestQuadOfPolygon(simplified);
+      if (corners) quad = orderQuad(corners);
+    }
+    if (!quad && simplified.length === 4) {
+      quad = orderQuad(simplified);
+    }
+    if (!quad) {
+      const rect = minAreaRect(convexHull(simplified));
+      if (rect) quad = orderQuad(rect.corners);
+    }
+    if (!quad) continue;
+    const areaRatio = quadArea(quad) / frameArea;
+    if (areaRatio < minAreaRatio || areaRatio > 0.99) continue;
+    out.push(quad);
+    if (out.length >= maxQuads) break;
+  }
+  return out;
+}
+
+
+/**
+ * Per-side repair. When one border of the document is invisible (white card on a
+ * white desk) the winning quad keeps a wrong side. This measures edge support for
+ * every side and, for the weak ones only, searches parallel lines in a window and
+ * takes the best-supported one. It is deliberately local: the other three sides are
+ * never touched, so a repair cannot destroy a good quad.
+ */
+export function repairSides(quad, { dist, width, height, minSupport = 0.55, windowFraction = 0.3 }) {
+  const ordered = orderQuad(quad);
+  const diagonal = Math.hypot(width, height);
+  const support = (a, b) => {
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    const steps = Math.max(14, Math.min(90, Math.round(length / 2)));
+    let sum = 0;
+    let count = 0;
+    for (let s = 1; s < steps; s += 1) {
+      const t = s / steps;
+      const x = Math.round(a.x + (b.x - a.x) * t);
+      const y = Math.round(a.y + (b.y - a.y) * t);
+      if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1) continue;
+      const d = dist[y * width + x];
+      sum += Math.exp(-(d * d) / 8);
+      count += 1;
+    }
+    return count ? sum / count : 0;
+  };
+
+  const centre = {
+    x: (ordered[0].x + ordered[1].x + ordered[2].x + ordered[3].x) / 4,
+    y: (ordered[0].y + ordered[1].y + ordered[2].y + ordered[3].y) / 4,
+  };
+  const repaired = ordered.map((point) => ({ ...point }));
+  const repairs = [];
+  const supportsBefore = [];
+  for (let side = 0; side < 4; side += 1) {
+    const a = ordered[side];
+    const b = ordered[(side + 1) % 4];
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    const base = support(a, b);
+    supportsBefore.push(base);
+    if (base >= minSupport || length < diagonal * 0.05) continue;
+    let nx = (b.y - a.y) / length;
+    let ny = -(b.x - a.x) / length;
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    if ((mx - centre.x) * nx + (my - centre.y) * ny < 0) { nx = -nx; ny = -ny; }
+    const limit = Math.max(8, Math.round(length * windowFraction));
+    let bestOffset = 0;
+    let bestSupport = base;
+    for (let offset = -limit; offset <= limit; offset += 1) {
+      if (!offset) continue;
+      const score = support(
+        { x: a.x + nx * offset, y: a.y + ny * offset },
+        { x: b.x + nx * offset, y: b.y + ny * offset },
+      );
+      if (score > bestSupport + 0.02) {
+        bestSupport = score;
+        bestOffset = offset;
+      }
+    }
+    if (!bestOffset) continue;
+    const next = repaired.map((point) => ({ ...point }));
+    next[side] = { x: ordered[side].x + nx * bestOffset, y: ordered[side].y + ny * bestOffset };
+    next[(side + 1) % 4] = {
+      x: ordered[(side + 1) % 4].x + nx * bestOffset,
+      y: ordered[(side + 1) % 4].y + ny * bestOffset,
+    };
+    const candidate = orderQuad(next);
+    const ratio = quadArea(candidate) / Math.max(1, quadArea(ordered));
+    if (!Number.isFinite(ratio) || ratio < 0.6 || ratio > 1.6) continue;
+    repaired[0] = candidate[0];
+    repaired[1] = candidate[1];
+    repaired[2] = candidate[2];
+    repaired[3] = candidate[3];
+    repairs.push({ side, offset: bestOffset, from: +base.toFixed(2), to: +bestSupport.toFixed(2) });
+  }
+  if (!repairs.length) return { quad, repairs };
+  return { quad: orderQuad(repaired), repairs, supportsBefore };
+}
+
+
+/**
+ * Approximate a simplified polygon (5+ points) with the quadrilateral of maximum area
+ * — a contour that is "almost" four sides should not be turned into a bounding box.
+ */
+export function bestQuadOfPolygon(points) {
+  if (!points || points.length < 4) return null;
+  if (points.length > 12) {
+    const sampled = [];
+    const step = points.length / 12;
+    for (let i = 0; i < 12; i += 1) sampled.push(points[Math.floor(i * step)]);
+    points = sampled;
+  }
+  const n = points.length;
+  let best = null;
+  let bestArea = 0;
+  for (let a = 0; a < n - 3; a += 1) {
+    for (let b = a + 1; b < n - 2; b += 1) {
+      for (let c = b + 1; c < n - 1; c += 1) {
+        for (let d = c + 1; d < n; d += 1) {
+          const quad = [points[a], points[b], points[c], points[d]];
+          const area = quadArea(orderQuad(quad));
+          if (area > bestArea) {
+            bestArea = area;
+            best = quad;
+          }
+        }
+      }
+    }
+  }
+  return best;
+}
+
 /* -------------------------------- pipeline -------------------------------- */
 
 /**
@@ -1265,6 +1529,13 @@ export function detectDocumentQuad(sourceCanvas, { maxSide = 400, keepDebug = fa
   for (const candidate of paperMaskQuads(rawGray, width, height)) {
     candidates.push({ quad: extendOverColours(orderQuad(candidate.quad), colourOptions), source: candidate.source });
   }
+  // contour detection (Canny-free, mask based): boundaries traced and simplified
+  for (const quad of contourQuads(maskA, width, height)) {
+    candidates.push({ quad: extendOverColours(quad, colourOptions), source: "contour-a" });
+  }
+  for (const quad of contourQuads(maskB, width, height)) {
+    candidates.push({ quad: extendOverColours(quad, colourOptions), source: "contour-b" });
+  }
 
   const { lines } = houghLines(edges, width, height, { maxLines: 12, thetaSteps: 120 });
   const houghQuads = buildQuads(lines, width, height, { maxPerGroup: 6 }).slice(0, 120);
@@ -1295,9 +1566,11 @@ export function detectDocumentQuad(sourceCanvas, { maxSide = 400, keepDebug = fa
   // thresholds, so a second, far more sensitive edge map is generated and every
   // candidate (old and new) is re-scored against it. Only runs when the first pass
   // is not already decisive, which keeps normal photos fast.
+  let weakDist = null;
   if (!best || best.total < 0.95) {
     const lowEdges = sensitiveEdges(mag, dir, width, height);
     const lowDist = distanceToEdges(lowEdges, width, height);
+    weakDist = lowDist;
     const lowLines = houghLines(lowEdges, width, height, {
       maxLines: 16, thetaSteps: 120, minVotesFraction: 0.05,
     }).lines;
