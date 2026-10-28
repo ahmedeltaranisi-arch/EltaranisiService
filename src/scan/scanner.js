@@ -75,6 +75,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
   const countLabel = document.getElementById("scanner-count");
   const status = document.getElementById("scanner-status");
   const filterSelect = document.getElementById("scanner-filter-all");
+  const cropFrame = document.getElementById("crop-frame");
 
   const state = {
     pages: [],
@@ -195,6 +196,7 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
     const empty = document.getElementById("scanner-empty");
     if (empty) empty.hidden = state.pages.length > 0;
     const hasPages = state.pages.length > 0;
+    if (filtersStrip) filtersStrip.classList.toggle("empty", !hasPages);
     ["scanner-export-pdf", "scanner-export-images", "scanner-rotate-left", "scanner-rotate-right",
       "scanner-flip", "scanner-crop-all", "scanner-detect", "scanner-page-delete"].forEach((id) => {
       const node = document.getElementById(id);
@@ -243,8 +245,10 @@ export function createScanner({ onToast = () => {}, onClose = () => {} } = {}) {
       stage.height = 10;
       overlay.setAttribute("viewBox", "0 0 10 10");
       overlay.innerHTML = "";
+      if (cropFrame) cropFrame.hidden = true;
       return;
     }
+    if (cropFrame) cropFrame.hidden = false;
     const source = scaleCanvas(page.canvas, PREVIEW_MAX);
     const previewCanvas = document.createElement("canvas");
     previewCanvas.width = source.width;
